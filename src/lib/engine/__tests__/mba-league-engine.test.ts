@@ -801,3 +801,224 @@ describe('MbaLeagueEngine — Dynasty Valuation, 2026–2029 Draft Pick Assets &
     expect(earlyPick.dynastyValue).toBeGreaterThan(latePick.dynastyValue);
   });
 });
+
+describe('MbaLeagueEngine — 2-Center Bipartite Slot Optimizer, Swap & Lock Alerts & Sleeper Sync Seam', () => {
+  it('solves the maximum-scoring legal 10-starter assignment across PG, SG, G, SF, PF, F, C, C, UTIL, UTIL while keeping Pinned Starters immovable and computing Hypothetical Best 10', async () => {
+    const fixtures = createDeterministicMbaFixtures();
+    // Make Nikola Jokic (1511, C slot index 7) an inferred Pinned Starter with a low locked Game 1 score (28.0 FP)
+    // while Game 2 finished at 37.0 FP, and move Alexandre Sarr (4895, C/PF) from Taxi to Bench with 49.0 FP
+    // alongside Alperen Sengun (1883, Bench C with 52.0 FP).
+    const r1 = fixtures.rosters.find((r) => r.roster_id === 1)!;
+    r1.taxi = ['4756', '4868'];
+
+    const jGame1 = fixtures.weeklyStats.find((g) => g.game_id === 'wk5_1511_1')!;
+    jGame1.stats = { pts: 20, reb: 10, ast: 7, dd: 1 }; // 10 + 10 + 7 + 1 = 28.0 FP
+    const r1Matchup = fixtures.matchups.find((m) => m.roster_id === 1)!;
+    r1Matchup.players_points['1511'] = 28.0; // Inferred Locked Score at 28.0 FP
+    r1Matchup.players_points['4895'] = 49.0; // Bench C/PF Alexandre Sarr has 49.0 FP
+    r1Matchup.players_points['2772'] = 44.0; // Bench PG/SG Dyson Daniels has 44.0 FP
+
+    const gateway = new InMemorySleeperGateway(fixtures);
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    // Also manually lock Devin Booker (1648, SG slot index 1) at his Game 1 score of 31.0 FP
+    engine.setPlayerManualLock(1, '1648', true);
+
+    const optimization = await engine.optimizeRosterLineup(1, 5);
+
+    // 1. All 10 MBA Starter Slots are filled with legal positions in both actionable and hypothetical lineups
+    expect(optimization.actionableOptimalStarters.map((s) => s.slotLabel)).toEqual([
+      'PG',
+      'SG',
+      'G',
+      'SF',
+      'PF',
+      'F',
+      'C',
+      'C',
+      'UTIL',
+      'UTIL',
+    ]);
+    expect(optimization.hypotheticalOptimalStarters.map((s) => s.slotLabel)).toEqual([
+      'PG',
+      'SG',
+      'G',
+      'SF',
+      'PF',
+      'F',
+      'C',
+      'C',
+      'UTIL',
+      'UTIL',
+    ]);
+
+    // 2. Two Center slots (indices 6 and 7) are occupied by C-eligible players
+    expect(optimization.actionableOptimalStarters[6].positions).toContain('C');
+    expect(optimization.actionableOptimalStarters[7].positions).toContain('C');
+    expect(optimization.hypotheticalOptimalStarters[6].positions).toContain('C');
+    expect(optimization.hypotheticalOptimalStarters[7].positions).toContain('C');
+
+    // 3. Pinned Starter Constraint:
+    // - Nikola Jokic (1511, inferred lock at 28.0 FP) MUST remain at slot index 7 (C) in actionableOptimalStarters
+    // - Devin Booker (1648, manual lock at 31.0 FP) MUST remain at slot index 1 (SG) in actionableOptimalStarters
+    expect(optimization.actionableOptimalStarters[7].playerId).toBe('1511');
+    expect(optimization.actionableOptimalStarters[7].isPinnedStarter).toBe(true);
+    expect(optimization.actionableOptimalStarters[7].effectiveWeeklyScore).toBe(28.0);
+    expect(optimization.actionableOptimalStarters[1].playerId).toBe('1648');
+    expect(optimization.actionableOptimalStarters[1].isPinnedStarter).toBe(true);
+    expect(optimization.actionableOptimalStarters[1].effectiveWeeklyScore).toBe(31.0);
+
+    // 4. All 3 high-scoring Bench players (Sengun 52.0, Sarr 49.0, Daniels 44.0) enter the actionable starting 10
+    // in place of the 3 lowest non-pinned starters (Banchero 25.0, Barnes 27.5, Edwards 35.0)
+    const actionableIds = optimization.actionableOptimalStarters.map((s) => s.playerId);
+    expect(actionableIds).toContain('1883'); // Alperen Sengun (52.0)
+    expect(actionableIds).toContain('4895'); // Alexandre Sarr (49.0)
+    expect(actionableIds).toContain('2772'); // Dyson Daniels (44.0)
+    expect(actionableIds).not.toContain('1988'); // Paolo Banchero (25.0) displaced
+    expect(actionableIds).not.toContain('1739'); // Scottie Barnes (27.5) displaced
+    expect(actionableIds).not.toContain('2580'); // Anthony Edwards (35.0) displaced
+
+    // Current total (with Jokic 28.0 and Booker 31.0): 357.71
+    // Actionable Optimal total: 357.71 - (25.0 + 27.5 + 35.0) + (52.0 + 49.0 + 44.0) = 415.21 (+57.50 FP)
+    expect(optimization.currentTotalScore).toBe(357.71);
+    expect(optimization.actionableTotalScore).toBe(415.21);
+    expect(optimization.actionableDeltaScore).toBe(57.5);
+
+    // 5. Hypothetical Best 10 ignores Pinned Starter locks on Jokic (28.0 FP) and Booker (31.0 FP),
+    // replacing them with higher-scoring Anthony Edwards (35.0 FP) in the unconstrained 10-starter optimum (+7.0 FP higher)
+    const hypotheticalIds = optimization.hypotheticalOptimalStarters.map((s) => s.playerId);
+    expect(hypotheticalIds).not.toContain('1511'); // Pinned Jokic (28.0) replaced in unconstrained Hypothetical Best 10
+    expect(hypotheticalIds).toContain('2580'); // Anthony Edwards (35.0) kept over Jokic (28.0)
+    expect(optimization.hypotheticalTotalScore).toBe(422.21);
+    expect(optimization.hypotheticalTotalScore).toBeGreaterThan(optimization.actionableTotalScore);
+  });
+
+  it('emits Swap & Lock Alerts when a Bench player in an open Lock-In Window exceeds an eligible non-pinned Starter Slot and never targets Pinned Starters', async () => {
+    const fixtures = createDeterministicMbaFixtures();
+    const gateway = new InMemorySleeperGateway(fixtures);
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const snapshot = await engine.getLeagueSnapshot();
+    const optimization = snapshot.activeRoster.lineupOptimization;
+
+    // Alperen Sengun (1883, Bench C) has 52.0 FP in an open Lock-In Window (2026-11-17 vs CHI)
+    expect(optimization.swapAndLockAlerts).toHaveLength(1);
+    const alert = optimization.swapAndLockAlerts[0];
+    expect(alert.benchPlayerId).toBe('1883');
+    expect(alert.benchPlayerName).toBe('Alperen Sengun');
+    expect(alert.lockableScore).toBe(52.0);
+    expect(alert.gameOpponent).toBe('CHI');
+    expect(alert.gameDate).toBe('2026-11-17');
+
+    // Lowest directly eligible non-pinned starter for C-eligible Sengun is UTIL Anthony Edwards (2580, 35.0 FP)
+    // while C slot 7 (Nikola Jokic, 1511) is a Pinned Starter and never targeted
+    expect(alert.targetSlotLabel).toBe('UTIL');
+    expect(alert.displacedPlayerId).toBe('2580');
+    expect(alert.displacedPlayerName).toBe('Anthony Edwards');
+    expect(alert.displacedEffectiveScore).toBe(35.0);
+    expect(alert.deltaPoints).toBe(17.0); // 52.0 - 35.0
+    // With 2-Center bipartite multi-position slide (Wembanyama C -> PF displacing Banchero 25.0 FP), net lineup gain is +27.0 FP
+    expect(alert.netLineupDeltaPoints).toBe(27.0);
+
+    // Verify that if Jokic (slot 7, C) has a lower score (e.g. 20.0 FP) but is a Pinned Starter,
+    // and both UTIL slots + C slot 6 have higher scores (55.0 FP), Sengun (52.0 FP) cannot target Pinned Starter Jokic
+    gateway.updateBundle((bundle) => {
+      const jGame1 = bundle.weeklyStats.find((g) => g.game_id === 'wk5_1511_1')!;
+      jGame1.stats = { pts: 20, reb: 10 }; // 10 + 10 = 20.0 FP locked
+      const m1 = bundle.matchups.find((m) => m.roster_id === 1)!;
+      m1.players_points['1511'] = 20.0; // Jokic pinned at 20.0 FP
+      // Make all non-pinned C/UTIL/PF/F/SF starters > 52.0 FP so no non-pinned slot is beaten
+      for (const pid of ['1846', '2580', '4922', '1988', '1739', '2304']) {
+        m1.players_points[pid] = 58.0;
+      }
+      bundle.weeklyStats = bundle.weeklyStats.filter((g) => g.player_id !== '1846');
+      bundle.weeklyProjections = bundle.weeklyProjections.filter((g) => g.player_id !== '1846');
+    });
+
+    const pinnedBlockedOpt = await engine.optimizeRosterLineup(1, 5);
+    expect(pinnedBlockedOpt.swapAndLockAlerts).toHaveLength(0);
+    expect(pinnedBlockedOpt.actionableOptimalStarters[7].playerId).toBe('1511');
+  });
+
+  it('flags Out/IR active starters and healthy players on Reserve (IR), and replaces unpinned Out starters with healthy Bench players', async () => {
+    const fixtures = createDeterministicMbaFixtures();
+    // 1. Mark active PF starter Paolo Banchero (1988) as 'Out' even with a high raw points placeholder (48.0)
+    fixtures.players['1988'].injury_status = 'Out';
+    fixtures.players['1988'].injury_notes = 'Ankle sprain';
+    const r1Matchup = fixtures.matchups.find((m) => m.roster_id === 1)!;
+    r1Matchup.players_points['1988'] = 48.0;
+
+    // 2. Mark Reserve (IR) player Ja Morant (2458) as healthy (injury_status: null)
+    fixtures.players['2458'].injury_status = null;
+    fixtures.players['2458'].injury_notes = null;
+
+    // 3. Also add an injured ('Out') Bench player Jalen Williams (2136) with 60.0 points to verify Out Bench players are never promoted
+    fixtures.players['2136'].injury_status = 'Out';
+    r1Matchup.players_points['2136'] = 60.0;
+
+    const gateway = new InMemorySleeperGateway(fixtures);
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const optimization = await engine.optimizeRosterLineup(1, 5);
+
+    // Expect both INJURED_STARTER (for Paolo Banchero, with 2/3 IR slots used -> hasOpenIrSlot = true)
+    // and HEALTHY_ON_IR (for Ja Morant on IR with injuryStatus === null)
+    const injuredStarterWarn = optimization.eligibilityWarnings.find(
+      (w) => w.type === 'INJURED_STARTER' && w.playerId === '1988'
+    );
+    expect(injuredStarterWarn).toBeDefined();
+    expect(injuredStarterWarn!.slotLabel).toBe('PF');
+    expect(injuredStarterWarn!.injuryStatus).toBe('Out');
+    expect(injuredStarterWarn!.hasOpenIrSlot).toBe(true);
+
+    const healthyIrWarn = optimization.eligibilityWarnings.find(
+      (w) => w.type === 'HEALTHY_ON_IR' && w.playerId === '2458'
+    );
+    expect(healthyIrWarn).toBeDefined();
+    expect(healthyIrWarn!.slotLabel).toBe('IR');
+    expect(healthyIrWarn!.playerName).toBe('Ja Morant');
+
+    // Out starter Paolo Banchero (1988) is replaced in actionableOptimalStarters,
+    // and Out Bench player Jalen Williams (2136) is NOT promoted into starter slots
+    const optimalIds = optimization.actionableOptimalStarters.map((s) => s.playerId);
+    expect(optimalIds).not.toContain('1988');
+    expect(optimalIds).not.toContain('2136');
+  });
+
+  it('stages step-by-step slot swaps, Lock-In actions, and IR moves through LineupMutationAdapter with Sleeper deep link', async () => {
+    const fixtures = createDeterministicMbaFixtures();
+    const gateway = new InMemorySleeperGateway(fixtures);
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const checklist = await engine.stageRosterLineupSync(1, 5);
+
+    expect(checklist.leagueId).toBe('1344293979830640640');
+    expect(checklist.rosterId).toBe(1);
+    expect(checklist.week).toBe(5);
+    expect(checklist.sleeperDeepLink).toBe('https://sleeper.com/leagues/1344293979830640640/team');
+
+    // Should include SWAP steps (sliding Wembanyama C -> PF for Banchero and moving Sengun BN -> C)
+    const swapSteps = checklist.steps.filter((s) => s.type === 'SWAP');
+    expect(swapSteps.length).toBeGreaterThanOrEqual(1);
+    expect(swapSteps.some((s) => s.title.includes('Alperen Sengun'))).toBe(true);
+
+    // Should include LOCK steps for open Lock-In Window Smash/Lean locks (SGA 51.0 FP, Wembanyama 47.0 FP, Sengun 52.0 FP)
+    const lockSteps = checklist.steps.filter((s) => s.type === 'LOCK');
+    expect(lockSteps.some((s) => s.title.includes('Shai Gilgeous-Alexander') && s.title.includes('51.0'))).toBe(
+      true
+    );
+    expect(lockSteps.some((s) => s.title.includes('Alperen Sengun') && s.title.includes('52.0'))).toBe(
+      true
+    );
+    expect(lockSteps.some((s) => s.title.includes('Victor Wembanyama') && s.title.includes('47.0'))).toBe(
+      true
+    );
+    // Inferred locked player Nikola Jokic (1511) is already locked in Sleeper and should not have a redundant LOCK step
+    expect(lockSteps.some((s) => s.title.includes('Nikola Jokic'))).toBe(false);
+  });
+});
+
