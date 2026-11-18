@@ -222,6 +222,75 @@ export interface PlayerSeasonMetrics {
   toPerGame: number;
 }
 
+export interface CompletedWeeklyGame {
+  gameId: string;
+  date: string;
+  opponent: string;
+  mbaPoints: number;
+  stats: SleeperStatLine;
+  isLockedGame: boolean;
+}
+
+export interface ScheduledWeeklyGame {
+  gameId: string;
+  date: string;
+  opponent: string;
+  projectedMbaPoints: number;
+  stats: SleeperStatLine;
+}
+
+export type LockSourceType = 'INFERRED_SLEEPER' | 'MANUAL_OVERRIDE' | 'FINAL_GAME_AUTO' | null;
+
+export type LockInRecommendationBadge =
+  | 'SMASH LOCK'
+  | 'LEAN LOCK'
+  | 'ROLL THE DICE'
+  | 'LOCKED';
+
+export type MatchupLeverageAnnotation =
+  | 'Protect Lead — Floor Lock'
+  | 'Chase Upside — Roll for Ceiling'
+  | null;
+
+export interface PlayerLockInEvaluation {
+  isLocked: boolean;
+  isPinnedStarter: boolean;
+  lockSource: LockSourceType;
+  lockedScore: number | null;
+  lockedGame: CompletedWeeklyGame | null;
+  isLockInWindowOpen: boolean;
+  canToggleManualLock: boolean;
+  lockableLatestGame: CompletedWeeklyGame | null;
+  completedGames: CompletedWeeklyGame[];
+  remainingGames: ScheduledWeeklyGame[];
+  remainingGamesMean: number;
+  remainingGamesMultiplier: number;
+  lockInThreshold: number;
+  effectiveWeeklyScore: number;
+  recommendation: LockInRecommendationBadge;
+  leverageAnnotation: MatchupLeverageAnnotation;
+}
+
+export interface MatchupLeverageSummary {
+  matchupId: number;
+  week: number;
+  activeRosterId: number;
+  activeRosterName: string;
+  activeManagerName: string;
+  opponentRosterId: number;
+  opponentRosterName: string;
+  opponentManagerName: string;
+  activeCurrentScore: number;
+  opponentCurrentScore: number;
+  currentDifferential: number;
+  activeProjectedScore: number;
+  opponentProjectedScore: number;
+  projectedDifferential: number;
+  posture: 'PROTECT_LEAD' | 'CHASE_UPSIDE' | 'BALANCED';
+  postureLabel: string;
+  summaryText: string;
+}
+
 export interface RosterPlayerSlot {
   slotIndex: number;
   slotLabel: StarterSlotType | 'BN' | 'IR' | 'TAXI';
@@ -241,6 +310,17 @@ export interface RosterPlayerSlot {
   currentWeekCompletedGamesCount: number;
   currentWeekRemainingGamesCount: number;
   latestCompletedGamePoints: number | null;
+  completedGames: CompletedWeeklyGame[];
+  remainingGames: ScheduledWeeklyGame[];
+  isLocked: boolean;
+  isPinnedStarter: boolean;
+  lockedScore: number | null;
+  isLockInWindowOpen: boolean;
+  lockInThreshold: number;
+  effectiveWeeklyScore: number;
+  recommendation: LockInRecommendationBadge;
+  leverageAnnotation: MatchupLeverageAnnotation;
+  lockIn: PlayerLockInEvaluation;
   dynastyValue: number;
 }
 
@@ -279,6 +359,7 @@ export interface HydratedRoster {
   allPlayers: RosterPlayerSlot[];
   ownedDraftPicks: DraftPickAsset[];
   currentWeekMatchupPoints: number;
+  currentWeekProjectedPoints: number;
   currentWeekMatchupId: number | null;
   starterTotalFpg: number;
 }
@@ -297,6 +378,7 @@ export interface MbaLeagueSnapshot {
   draftPickAssets: DraftPickAsset[];
   activeRosterId: number;
   activeRoster: HydratedRoster;
+  matchupLeverage: MatchupLeverageSummary | null;
   syncedAt: string;
 }
 

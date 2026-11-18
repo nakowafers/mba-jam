@@ -13,6 +13,7 @@ interface MbaLeagueContextValue {
   isSyncing: boolean;
   lastError: string | null;
   selectRoster: (rosterId: number) => void;
+  toggleManualLock: (playerId: string, rosterId?: number) => void;
   syncLatestData: () => Promise<void>;
 }
 
@@ -36,6 +37,7 @@ export function MbaLeagueProvider({
   const [activeRosterId, setActiveRosterId] = useState<number>(
     initialBundle.rosters[0]?.roster_id ?? 1
   );
+  const [lockRevision, setLockRevision] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
@@ -55,6 +57,28 @@ export function MbaLeagueProvider({
     [engine, bundle.league.league_id]
   );
 
+  const toggleManualLock = useCallback(
+    (playerId: string, rosterId?: number) => {
+      const targetRosterId = rosterId ?? activeRosterId;
+      const currentWeek = bundle.nbaState.week || bundle.league.settings.leg || 1;
+      const completedCount = bundle.weeklyStats.filter((s) => s.player_id === playerId).length;
+      engine.togglePlayerManualLock(targetRosterId, playerId, {
+        leagueId: bundle.league.league_id,
+        week: currentWeek,
+        completedGamesCount: completedCount,
+      });
+      setLockRevision((rev) => rev + 1);
+    },
+    [
+      activeRosterId,
+      bundle.league.league_id,
+      bundle.league.settings.leg,
+      bundle.nbaState.week,
+      bundle.weeklyStats,
+      engine,
+    ]
+  );
+
   const syncLatestData = useCallback(async () => {
     setIsSyncing(true);
     setLastError(null);
@@ -68,10 +92,10 @@ export function MbaLeagueProvider({
     }
   }, [gateway]);
 
-  const snapshot = useMemo(
-    () => engine.buildSnapshotFromBundle(bundle, activeRosterId),
-    [engine, bundle, activeRosterId]
-  );
+  const snapshot = useMemo(() => {
+    void lockRevision;
+    return engine.buildSnapshotFromBundle(bundle, activeRosterId);
+  }, [engine, bundle, activeRosterId, lockRevision]);
 
   const value = useMemo(
     () => ({
@@ -81,9 +105,10 @@ export function MbaLeagueProvider({
       isSyncing,
       lastError,
       selectRoster,
+      toggleManualLock,
       syncLatestData,
     }),
-    [engine, snapshot, isSyncing, lastError, selectRoster, syncLatestData]
+    [engine, snapshot, isSyncing, lastError, selectRoster, toggleManualLock, syncLatestData]
   );
 
   return <MbaLeagueContext.Provider value={value}>{children}</MbaLeagueContext.Provider>;
