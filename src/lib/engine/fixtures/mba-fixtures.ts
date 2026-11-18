@@ -272,13 +272,25 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
     const positions = ['PG', 'SG', 'PG', 'SF', 'PF', 'SF', 'C', 'C', 'SG', 'PF', 'PG', 'SF', 'C', 'SG', 'PF', 'PG', 'C'];
     positions.forEach((pos, idx) => {
       const pid = `r${r}_p${idx + 1}`;
+      // Roster #4 (Cobra Clutch): Veteran contender roster (ages 27..32)
+      // Roster #6 (Polygondwanalanders): Young rebuilding core (ages 20..23)
+      // Roster #8 (2027 MBA Champions): Prime contender (ages 25..30)
+      const age =
+        r === 4
+          ? 27 + (idx % 6)
+          : r === 6
+            ? 22 + (idx % 7)
+            : r === 8
+              ? 25 + (idx % 6)
+              : 22 + (idx % 8);
+
       players[pid] = {
         player_id: pid,
         first_name: `Player`,
         last_name: `${r}-${idx + 1}`,
         full_name: `Player ${r}-${idx + 1}`,
-        age: 22 + (idx % 8),
-        years_exp: 2 + (idx % 6),
+        age,
+        years_exp: Math.max(1, age - 19),
         position: pos,
         fantasy_positions: [pos],
         team: 'NBA',
@@ -382,6 +394,26 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
       };
     }
 
+    const rosterMatch = /^r(\d+)_p(\d+)$/.exec(pid);
+    const rosterNum = rosterMatch ? Number.parseInt(rosterMatch[1], 10) : 1;
+    const slotNum = rosterMatch ? Number.parseInt(rosterMatch[2], 10) : 1;
+
+    // Differentiate scoring profiles across Rosters while keeping everything deterministic:
+    // Roster #1 young stars (Wembanyama 1846, Banchero 1988, Sengun 1883, Flagg 4922),
+    // Roster #4 & #8: high-scoring contenders; Roster #3 & #5: rebuilding scoring; Roster #6: high-upside young core
+    const isRoster1Cornerstone = ['1846', '1988', '1883', '4922', '2301', '2580'].includes(pid);
+    const ptsBoost = isRoster1Cornerstone
+      ? 50
+      : rosterNum === 4
+        ? 45
+        : rosterNum === 8
+          ? 30
+          : rosterNum === 6 && slotNum <= 6
+            ? 15
+            : rosterNum === 3 || rosterNum === 5
+              ? -35
+              : 0;
+
     return {
       player_id: pid,
       date: null,
@@ -392,7 +424,7 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
       team: players[pid].team,
       stats: {
         gp: 10,
-        pts: 220 - (index % 7) * 10,
+        pts: 220 + ptsBoost - (index % 7) * 10,
         reb: 70 + (index % 5) * 10,
         ast: 50 + (index % 4) * 10,
         stl: 10,
@@ -673,7 +705,16 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
     users,
     rosters,
     matchups,
-    tradedPicks: [],
+    tradedPicks: [
+      { season: '2026', round: 1, roster_id: 3, owner_id: 5, previous_owner_id: 3 },
+      { season: '2026', round: 2, roster_id: 4, owner_id: 3, previous_owner_id: 4 },
+      { season: '2027', round: 1, roster_id: 6, owner_id: 1, previous_owner_id: 6 },
+      { season: '2027', round: 2, roster_id: 8, owner_id: 1, previous_owner_id: 8 },
+      { season: '2028', round: 1, roster_id: 10, owner_id: 1, previous_owner_id: 10 },
+      { season: '2028', round: 1, roster_id: 4, owner_id: 3, previous_owner_id: 4 },
+      { season: '2029', round: 1, roster_id: 8, owner_id: 5, previous_owner_id: 8 },
+      { season: '2029', round: 2, roster_id: 1, owner_id: 9, previous_owner_id: 1 },
+    ],
     players,
     seasonStats,
     weeklyStats,
