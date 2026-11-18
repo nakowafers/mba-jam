@@ -241,6 +241,22 @@ export interface RosterPlayerSlot {
   currentWeekCompletedGamesCount: number;
   currentWeekRemainingGamesCount: number;
   latestCompletedGamePoints: number | null;
+  dynastyValue: number;
+}
+
+export interface PlayerDynastyValuationInput {
+  actualFpg: number;
+  gamesPlayed?: number;
+  projectedFpg?: number | null;
+  age: number | null;
+  positions: string[];
+}
+
+export interface PlayerDynastyValuation {
+  blendedFpg: number;
+  ageMultiplier: number;
+  scarcityMultiplier: number;
+  dynastyValue: number;
 }
 
 export interface RosterStanding {
@@ -261,6 +277,7 @@ export interface HydratedRoster {
   reserveSlots: RosterPlayerSlot[];
   taxiSlots: RosterPlayerSlot[];
   allPlayers: RosterPlayerSlot[];
+  ownedDraftPicks: DraftPickAsset[];
   currentWeekMatchupPoints: number;
   currentWeekMatchupId: number | null;
   starterTotalFpg: number;
@@ -276,23 +293,89 @@ export interface MbaLeagueSnapshot {
   starterSlotTemplate: readonly StarterSlotType[];
   managers: Manager[];
   rosters: HydratedRoster[];
+  tradedPicks: SleeperTradedPick[];
+  draftPickAssets: DraftPickAsset[];
   activeRosterId: number;
   activeRoster: HydratedRoster;
   syncedAt: string;
 }
 
+export type DraftPickSeason = '2026' | '2027' | '2028' | '2029';
+
+export const MBA_DRAFT_PICK_SEASONS: readonly DraftPickSeason[] = [
+  '2026',
+  '2027',
+  '2028',
+  '2029',
+] as const;
+
 export type ProjectedPickTier = 'Early' | 'Mid' | 'Late';
 
 export interface DraftPickAsset {
   id: string;
-  season: '2026' | '2027' | '2028' | '2029';
+  season: DraftPickSeason;
   round: 1 | 2;
   originalRosterId: number;
   originalRosterName: string;
+  currentOwnerRosterId: number;
+  currentOwnerRosterName: string;
   ownerRosterId: number;
   ownerRosterName: string;
+  isTraded: boolean;
+  viaAnnotation: string | null;
+  displayLabel: string;
+  projectedSlot: number;
   projectedTier: ProjectedPickTier;
+  hasManualTierOverride: boolean;
   dynastyValue: number;
+}
+
+export interface DraftPickMatrixRow {
+  rosterId: number;
+  rosterName: string;
+  managerDisplayName: string;
+  totalPickCapital: number;
+  firstRoundCount: number;
+  secondRoundCount: number;
+  picksBySeason: Record<DraftPickSeason, DraftPickAsset[]>;
+  allOwnedPicks: DraftPickAsset[];
+}
+
+export interface DraftPickMatrix {
+  seasons: readonly DraftPickSeason[];
+  allPicks: DraftPickAsset[];
+  byOwnerRosterId: Record<number, Record<DraftPickSeason, DraftPickAsset[]>>;
+  rows: DraftPickMatrixRow[];
+}
+
+export type RosterArchetype =
+  | 'Title Favorite'
+  | 'Young Juggernaut'
+  | 'Reloading'
+  | 'Asset-Rich Rebuilder';
+
+export interface RosterPowerRanking {
+  rosterId: number;
+  rosterName: string;
+  managerDisplayName: string;
+  wins: number;
+  losses: number;
+  ppts: number;
+  fpts: number;
+  overallRank: number;
+  overallDynastyPower: number;
+  contenderScore: number;
+  contenderRank: number;
+  dynastyCoreScore: number;
+  dynastyCoreRank: number;
+  youngCoreValue: number;
+  youngCoreRank: number;
+  under25PlayerCount: number;
+  draftPickCapital: number;
+  draftPickRank: number;
+  ownedFirstRoundPicksCount: number;
+  ownedSecondRoundPicksCount: number;
+  archetype: RosterArchetype;
 }
 
 // Pluggable Seams
