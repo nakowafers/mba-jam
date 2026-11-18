@@ -1,0 +1,3 @@
+# Non-Linear Dynasty Trade Valuation and Replacement Cut Accounting
+
+Linear trade calculators fail in a 10-team, 10-starter dynasty league because summing four bench players ("four quarters") appears to beat a single elite starter ("one dollar"). MBA Jam evaluates trades using a dual-axis model: (1) **Adjusted Package Dynasty Value**, which applies a **Consolidation Premium** to elite cornerstone assets and deducts the **Replacement Cut Asset** value for the side receiving excess players in uneven trades, and (2) **Starting 10 Δ FP/G**, which solves each Roster's pre-trade and post-trade optimal 10-starter lineup (`PG, SG, G, SF, PF, F, C, C, UTIL, UTIL`) to measure true weekly impact.

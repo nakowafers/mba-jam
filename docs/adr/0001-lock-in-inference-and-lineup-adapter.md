@@ -1,0 +1,3 @@
+# Lock-In Inference and Pluggable Lineup Mutation Adapter
+
+Sleeper's public v1 REST API is strictly read-only and does not expose an explicit `is_locked` boolean per player in NBA Lock-In matchups (`game_mode: 1`). We infer a **Locked Score** automatically whenever a player's `players_points` in `/matchups/{leg}` remains frozen at an earlier game's score after a subsequent game in the same week has completed, while allowing Managers to manually toggle lock state during an open **Lock-In Window**. All lineup swaps and lock actions flow through a `LineupMutationAdapter` interface so v1 can render an interactive Sleeper Sync Checklist while v2 can swap in a direct Sleeper GraphQL write adapter without changing domain or UI code.
