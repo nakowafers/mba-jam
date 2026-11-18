@@ -4,9 +4,12 @@ import React, { useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  ArrowRightLeft,
   Award,
   Calendar,
   CheckCircle2,
+  ClipboardCheck,
+  ExternalLink,
   Flame,
   Lock,
   Pin,
@@ -17,12 +20,20 @@ import {
   TrendingUp,
   Unlock,
   Users,
+  Wand2,
+  X,
+  Zap,
 } from 'lucide-react';
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
 import {
   LockInRecommendationBadge,
   MatchupLeverageSummary,
+  OptimizedStarterSlotAssignment,
+  RosterEligibilityWarning,
+  RosterLineupOptimization,
   RosterPlayerSlot,
+  StagedLineupChecklist,
+  SwapAndLockAlert,
 } from '@/lib/types/mba';
 
 function SlotBadge({
@@ -108,6 +119,420 @@ function RecommendationBadge({
         <span className="ml-0.5 text-[10px] font-normal opacity-80">({sourceTag})</span>
       )}
     </span>
+  );
+}
+
+function SwapAndLockAlertBanners({
+  alerts,
+  onOpenSyncDrawer,
+}: {
+  alerts: SwapAndLockAlert[];
+  onOpenSyncDrawer: () => void;
+}) {
+  if (alerts.length === 0) return null;
+
+  return (
+    <section
+      aria-label="Swap and Lock Alerts"
+      data-testid="swap-and-lock-alerts-banner"
+      className="space-y-2.5"
+    >
+      {alerts.map((alert) => (
+        <div
+          key={alert.id}
+          data-testid={`swap-lock-alert-${alert.benchPlayerId}`}
+          className="flex flex-col justify-between gap-4 rounded-2xl border border-orange-500/50 bg-gradient-to-r from-orange-950/60 via-slate-900 to-slate-950 p-4 shadow-lg shadow-orange-500/10 lg:flex-row lg:items-center"
+        >
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-2.5 py-1 font-mono text-xs font-extrabold uppercase tracking-wider text-slate-950">
+                <Zap className="h-3.5 w-3.5" />
+                Swap &amp; Lock Alert
+              </span>
+              <span className="rounded-lg bg-emerald-500/20 px-2.5 py-1 font-mono text-xs font-extrabold text-emerald-300 ring-1 ring-emerald-500/40">
+                +{alert.deltaPoints.toFixed(1)} FP Direct Swap
+                {alert.netLineupDeltaPoints > alert.deltaPoints
+                  ? ` • +${alert.netLineupDeltaPoints.toFixed(1)} FP Optimal Slide`
+                  : ''}
+              </span>
+              {alert.gameDate && alert.gameOpponent && (
+                <span className="font-mono text-xs text-orange-200/90">
+                  Open Lock-In Window ({alert.gameDate} vs {alert.gameOpponent})
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-bold text-white">
+              Bench {alert.benchPlayerPositions.join('/')} {alert.benchPlayerName} ({alert.benchPlayerTeam}) banked{' '}
+              <span className="font-mono text-orange-300">{alert.lockableScore.toFixed(1)} MBA FP</span> — beats{' '}
+              <span className="font-mono text-slate-200">{alert.targetSlotLabel}</span> starter{' '}
+              {alert.displacedPlayerName} ({alert.displacedEffectiveScore.toFixed(1)} eff FP)
+            </p>
+            <p className="text-xs text-slate-300">{alert.detail}</p>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onOpenSyncDrawer}
+              data-testid={`alert-open-sync-drawer-${alert.benchPlayerId}`}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-slate-950 shadow-sm transition hover:bg-orange-400"
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              <span>Stage Swap &amp; Lock</span>
+            </button>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function EligibilityWarningsBanner({ warnings }: { warnings: RosterEligibilityWarning[] }) {
+  if (warnings.length === 0) return null;
+
+  return (
+    <section
+      aria-label="Roster and IR Eligibility Warnings"
+      data-testid="eligibility-warnings-banner"
+      className="space-y-2"
+    >
+      {warnings.map((warning) => (
+        <div
+          key={warning.id}
+          data-testid={`eligibility-warning-${warning.playerId}`}
+          className={`flex flex-col justify-between gap-2 rounded-xl border p-3.5 sm:flex-row sm:items-center ${
+            warning.severity === 'ERROR'
+              ? 'border-rose-500/50 bg-rose-950/30 text-rose-200'
+              : 'border-amber-500/50 bg-amber-950/30 text-amber-200'
+          }`}
+        >
+          <div className="flex items-start gap-2.5 sm:items-center">
+            <ShieldAlert
+              className={`h-4 w-4 shrink-0 ${
+                warning.severity === 'ERROR' ? 'text-rose-400' : 'text-amber-400'
+              }`}
+            />
+            <div>
+              <span className="mr-2 rounded bg-slate-900/80 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider">
+                {warning.type === 'INJURED_STARTER' ? 'Injured Starter' : 'Healthy on IR'}
+              </span>
+              <span className="text-xs font-semibold">{warning.message}</span>
+            </div>
+          </div>
+          <span className="shrink-0 rounded-lg bg-slate-950/80 px-2.5 py-1 font-mono text-[11px] font-bold text-white ring-1 ring-slate-700">
+            Action: {warning.recommendedAction}
+          </span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function OptimalLineupComparisonBar({
+  optimization,
+  lineupViewMode,
+  onChangeViewMode,
+  onOpenSyncDrawer,
+}: {
+  optimization: RosterLineupOptimization;
+  lineupViewMode: 'CURRENT' | 'ACTIONABLE' | 'HYPOTHETICAL';
+  onChangeViewMode: (mode: 'CURRENT' | 'ACTIONABLE' | 'HYPOTHETICAL') => void;
+  onOpenSyncDrawer: () => void;
+}) {
+  const pinnedCount = optimization.currentStarters.filter((s) => s.isPinnedStarter).length;
+  const actionableGain = optimization.actionableDeltaScore;
+  const hypotheticalGain = optimization.hypotheticalDeltaScore;
+
+  return (
+    <section
+      aria-label="2-Center Bipartite Slot Optimizer Summary"
+      data-testid="optimal-lineup-comparison-bar"
+      className="rounded-2xl border border-slate-800 bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-950 p-4 shadow-md"
+    >
+      <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/20 px-2.5 py-1 font-mono text-xs font-bold uppercase tracking-wider text-indigo-300 ring-1 ring-indigo-500/30">
+              <Wand2 className="h-3.5 w-3.5" />
+              2-Center Bipartite Slot Optimizer
+            </span>
+            <span className="rounded-lg bg-emerald-500/15 px-2.5 py-1 font-mono text-xs font-bold text-emerald-300 ring-1 ring-emerald-500/30">
+              {pinnedCount} Pinned {pinnedCount === 1 ? 'Starter' : 'Starters'} Respected
+            </span>
+            {optimization.recommendedSwaps.length > 0 ? (
+              <span className="rounded-lg bg-orange-500/20 px-2.5 py-1 font-mono text-xs font-bold text-orange-300 ring-1 ring-orange-500/30">
+                {optimization.recommendedSwaps.length} Recommended{' '}
+                {optimization.recommendedSwaps.length === 1 ? 'Swap' : 'Swaps'} (+
+                {actionableGain.toFixed(1)} FP)
+              </span>
+            ) : (
+              <span className="rounded-lg bg-slate-800 px-2.5 py-1 font-mono text-xs font-semibold text-slate-300">
+                Starting 10 Optimal
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400">
+            Solves maximum-scoring legal assignment across{' '}
+            <span className="font-mono text-slate-300">PG, SG, G, SF, PF, F, C, C, UTIL, UTIL</span>{' '}
+            using Effective Weekly Scores while keeping Pinned Starters fixed in their slots.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => onChangeViewMode('CURRENT')}
+              data-testid="optimizer-mode-current"
+              className={`cursor-pointer rounded-xl border px-3 py-2 text-left transition ${
+                lineupViewMode === 'CURRENT'
+                  ? 'border-orange-500 bg-orange-500/15'
+                  : 'border-slate-800 bg-slate-950/80 hover:border-slate-700'
+              }`}
+            >
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Current 10
+              </div>
+              <div
+                data-testid="optimizer-current-total"
+                className="mt-0.5 font-mono text-base font-extrabold text-white"
+              >
+                {optimization.currentTotalScore.toFixed(1)}
+              </div>
+              <div className="font-mono text-[10px] text-slate-400">Active Lineup</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChangeViewMode('ACTIONABLE')}
+              data-testid="optimizer-mode-actionable"
+              className={`cursor-pointer rounded-xl border px-3 py-2 text-left transition ${
+                lineupViewMode === 'ACTIONABLE'
+                  ? 'border-emerald-500 bg-emerald-500/15'
+                  : 'border-slate-800 bg-slate-950/80 hover:border-slate-700'
+              }`}
+            >
+              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                Actionable Optimal
+              </div>
+              <div
+                data-testid="optimizer-actionable-total"
+                className="mt-0.5 font-mono text-base font-extrabold text-emerald-300"
+              >
+                {optimization.actionableTotalScore.toFixed(1)}
+              </div>
+              <div
+                data-testid="optimizer-actionable-delta"
+                className="font-mono text-[10px] font-bold text-emerald-400"
+              >
+                {actionableGain >= 0 ? '+' : ''}
+                {actionableGain.toFixed(1)} FP Δ
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChangeViewMode('HYPOTHETICAL')}
+              data-testid="optimizer-mode-hypothetical"
+              className={`cursor-pointer rounded-xl border px-3 py-2 text-left transition ${
+                lineupViewMode === 'HYPOTHETICAL'
+                  ? 'border-sky-500 bg-sky-500/15'
+                  : 'border-slate-800 bg-slate-950/80 hover:border-slate-700'
+              }`}
+            >
+              <div className="text-[10px] font-bold uppercase tracking-wider text-sky-300">
+                Hypothetical Best 10
+              </div>
+              <div
+                data-testid="optimizer-hypothetical-total"
+                className="mt-0.5 font-mono text-base font-extrabold text-sky-200"
+              >
+                {optimization.hypotheticalTotalScore.toFixed(1)}
+              </div>
+              <div className="font-mono text-[10px] text-sky-400">
+                Unconstrained ({hypotheticalGain >= 0 ? '+' : ''}
+                {hypotheticalGain.toFixed(1)})
+              </div>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenSyncDrawer}
+            data-testid="optimize-sync-lineup-button"
+            className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-950 shadow-md shadow-orange-500/15 transition hover:from-orange-400 hover:to-amber-400"
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            <span>Optimize &amp; Sync Lineup ({optimization.stagedChecklist.steps.length})</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SleeperSyncChecklistDrawer({
+  isOpen,
+  onClose,
+  checklist,
+  optimization,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  checklist: StagedLineupChecklist;
+  optimization: RosterLineupOptimization;
+}) {
+  const [checkedIds, setCheckedIds] = useState<Record<string, boolean>>({});
+
+  if (!isOpen) return null;
+
+  const toggleStep = (stepId: string) => {
+    setCheckedIds((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
+  };
+
+  const completedCount = checklist.steps.filter((s) => checkedIds[s.id]).length;
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Sleeper Sync Checklist Drawer"
+      data-testid="sleeper-sync-checklist-drawer"
+      className="fixed inset-0 z-50 flex justify-end bg-slate-950/75 backdrop-blur-sm"
+    >
+      <div className="flex h-full w-full max-w-lg flex-col justify-between border-l border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <div className="space-y-5 overflow-y-auto pr-1">
+          <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-4">
+            <div>
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-orange-500/20 px-2 py-0.5 font-mono text-[11px] font-bold uppercase tracking-wider text-orange-300 ring-1 ring-orange-500/30">
+                ADR-0001 LineupMutationAdapter
+              </span>
+              <h2 className="mt-1.5 text-lg font-extrabold text-white">
+                Sleeper Sync Checklist (Week {checklist.week})
+              </h2>
+              <p className="text-xs text-slate-400">
+                Check off each recommended slot swap and Lock-In action in Sleeper.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              data-testid="close-sync-drawer-button"
+              className="cursor-pointer rounded-lg border border-slate-800 bg-slate-950 p-1.5 text-slate-400 hover:border-slate-700 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Score Gain Summary */}
+          <div className="grid grid-cols-3 gap-2.5 rounded-xl border border-slate-800 bg-slate-950/90 p-3">
+            <div>
+              <div className="text-[10px] font-bold uppercase text-slate-400">Current</div>
+              <div className="font-mono text-sm font-extrabold text-white">
+                {optimization.currentTotalScore.toFixed(1)} FP
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase text-emerald-400">
+                Actionable Optimal
+              </div>
+              <div className="font-mono text-sm font-extrabold text-emerald-300">
+                {optimization.actionableTotalScore.toFixed(1)} FP (+
+                {optimization.actionableDeltaScore.toFixed(1)})
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase text-sky-400">Progress</div>
+              <div
+                data-testid="checklist-progress-count"
+                className="font-mono text-sm font-extrabold text-sky-300"
+              >
+                {completedCount} / {checklist.steps.length} Done
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Checklist Steps */}
+          {checklist.steps.length === 0 ? (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 text-xs text-emerald-200">
+              Your starting lineup and Lock-In selections are already fully optimized for Week{' '}
+              {checklist.week}!
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {checklist.steps.map((step, index) => {
+                const isChecked = Boolean(checkedIds[step.id]);
+                const typeBadgeStyle =
+                  step.type === 'SWAP'
+                    ? 'bg-orange-500/20 text-orange-300 ring-orange-500/40'
+                    : step.type === 'LOCK'
+                      ? 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/40'
+                      : 'bg-rose-500/20 text-rose-300 ring-rose-500/40';
+
+                return (
+                  <label
+                    key={step.id}
+                    data-testid={`sync-checklist-step-${index}`}
+                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition ${
+                      isChecked
+                        ? 'border-emerald-500/40 bg-emerald-950/20 opacity-75'
+                        : 'border-slate-800 bg-slate-950/80 hover:border-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleStep(step.id)}
+                      className="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-900 text-orange-500"
+                    />
+                    <div className="flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-extrabold uppercase ring-1 ${typeBadgeStyle}`}
+                        >
+                          {step.type}
+                        </span>
+                        <span
+                          className={`text-xs font-bold ${
+                            isChecked ? 'line-through text-slate-400' : 'text-white'
+                          }`}
+                        >
+                          {step.title}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400">{step.detail}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pluggable Adapter Seam Status */}
+          <div className="rounded-xl border border-slate-800/90 bg-slate-950/60 p-3 text-[11px] text-slate-400">
+            <div className="font-mono font-bold text-slate-300">
+              Adapter Seam: ChecklistLineupAdapter (v1 Active)
+            </div>
+            <p className="mt-0.5">
+              v2 Direct Sleeper GraphQL Write Adapter slot is wired behind{' '}
+              <code className="text-orange-300">LineupMutationAdapter</code> (ADR-0001).
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2.5 border-t border-slate-800 pt-4">
+          <a
+            href={checklist.sleeperDeepLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="sleeper-deep-link-button"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-950 transition hover:bg-orange-400"
+          >
+            <span>Open MBA League Team in Sleeper</span>
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -198,9 +623,15 @@ function MatchupLeverageBanner({ leverage }: { leverage: MatchupLeverageSummary 
 function PlayerSlotRow({
   slot,
   onToggleManualLock,
+  previousSlotLabel,
+  isMoved,
+  hasSwapAndLockAlert,
 }: {
   slot: RosterPlayerSlot;
   onToggleManualLock: (playerId: string) => void;
+  previousSlotLabel?: string;
+  isMoved?: boolean;
+  hasSwapAndLockAlert?: boolean;
 }) {
   const m = slot.seasonMetrics;
   const { lockIn } = slot;
@@ -209,11 +640,15 @@ function PlayerSlotRow({
     <div
       data-testid={`roster-slot-${slot.category.toLowerCase()}-${slot.slotIndex}`}
       className={`group flex flex-col justify-between gap-3 rounded-xl border p-3.5 transition ${
-        slot.isPinnedStarter
-          ? 'border-emerald-500/40 bg-emerald-950/15 hover:border-emerald-500/60'
-          : slot.isLockInWindowOpen && !slot.isLocked
-            ? 'border-orange-500/35 bg-slate-900/80 hover:border-orange-500/60'
-            : 'border-slate-800/80 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+        hasSwapAndLockAlert
+          ? 'border-orange-500/70 bg-orange-950/20 shadow-sm shadow-orange-500/10'
+          : isMoved
+            ? 'border-indigo-500/50 bg-indigo-950/20'
+            : slot.isPinnedStarter
+              ? 'border-emerald-500/40 bg-emerald-950/15 hover:border-emerald-500/60'
+              : slot.isLockInWindowOpen && !slot.isLocked
+                ? 'border-orange-500/35 bg-slate-900/80 hover:border-orange-500/60'
+                : 'border-slate-800/80 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
       }`}
     >
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
@@ -234,6 +669,18 @@ function PlayerSlotRow({
                 {slot.positions.join('/')}
               </span>
               <InjuryBadge status={slot.injuryStatus} notes={slot.injuryNotes} />
+              {isMoved && previousSlotLabel && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/20 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-indigo-200 ring-1 ring-indigo-500/40">
+                  <ArrowRightLeft className="h-2.5 w-2.5" />
+                  Moved from {previousSlotLabel}
+                </span>
+              )}
+              {hasSwapAndLockAlert && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-orange-500 px-2 py-0.5 font-mono text-[10px] font-extrabold uppercase tracking-wider text-slate-950">
+                  <Zap className="h-2.5 w-2.5" />
+                  Swap &amp; Lock Ready
+                </span>
+              )}
               {slot.isPinnedStarter && (
                 <span
                   data-testid={`pinned-starter-badge-${slot.playerId}`}
@@ -391,7 +838,23 @@ function PlayerSlotRow({
 export function RosterOverview() {
   const { snapshot, selectRoster, toggleManualLock } = useMbaLeague();
   const { activeRoster, scoringSettings, matchupLeverage } = snapshot;
+  const optimization = activeRoster.lineupOptimization;
   const [showScoringModal, setShowScoringModal] = useState(false);
+  const [lineupViewMode, setLineupViewMode] = useState<'CURRENT' | 'ACTIONABLE' | 'HYPOTHETICAL'>(
+    'CURRENT'
+  );
+  const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState(false);
+
+  const displayedStarterSlots: OptimizedStarterSlotAssignment[] =
+    lineupViewMode === 'ACTIONABLE'
+      ? optimization.actionableOptimalStarters
+      : lineupViewMode === 'HYPOTHETICAL'
+        ? optimization.hypotheticalOptimalStarters
+        : optimization.currentStarters;
+
+  const alertBenchPlayerIds = new Set(
+    optimization.swapAndLockAlerts.map((a) => a.benchPlayerId)
+  );
 
   const scoringPills = [
     { label: 'PTS', val: `+${scoringSettings.pts}` },
@@ -484,8 +947,25 @@ export function RosterOverview() {
         </section>
       )}
 
+      {/* Urgent Swap & Lock Alert Banner(s) */}
+      <SwapAndLockAlertBanners
+        alerts={optimization.swapAndLockAlerts}
+        onOpenSyncDrawer={() => setIsSyncDrawerOpen(true)}
+      />
+
+      {/* IR & Injury Eligibility Warnings */}
+      <EligibilityWarningsBanner warnings={optimization.eligibilityWarnings} />
+
       {/* Live Head-to-Head Matchup Leverage Banner */}
       {matchupLeverage && <MatchupLeverageBanner leverage={matchupLeverage} />}
+
+      {/* 2-Center Bipartite Optimal Lineup Comparison Bar */}
+      <OptimalLineupComparisonBar
+        optimization={optimization}
+        lineupViewMode={lineupViewMode}
+        onChangeViewMode={setLineupViewMode}
+        onOpenSyncDrawer={() => setIsSyncDrawerOpen(true)}
+      />
 
       {/* Active Roster Hero Summary Card */}
       <section className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-5 shadow-lg">
@@ -571,7 +1051,11 @@ export function RosterOverview() {
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-orange-400" />
               <h2 className="text-base font-bold text-white">
-                Active Starter Slots (10)
+                {lineupViewMode === 'CURRENT'
+                  ? 'Active Starter Slots (10)'
+                  : lineupViewMode === 'ACTIONABLE'
+                    ? 'Actionable Optimal Starter Slots (10)'
+                    : 'Hypothetical Unconstrained Best 10'}
               </h2>
             </div>
             <span className="font-mono text-xs text-slate-400">
@@ -580,11 +1064,13 @@ export function RosterOverview() {
           </div>
 
           <div className="space-y-2.5">
-            {activeRoster.starterSlots.map((slot) => (
+            {displayedStarterSlots.map((slot) => (
               <PlayerSlotRow
-                key={`starter-${slot.slotIndex}-${slot.playerId}`}
+                key={`starter-${lineupViewMode}-${slot.slotIndex}-${slot.playerId}`}
                 slot={slot}
                 onToggleManualLock={toggleManualLock}
+                previousSlotLabel={slot.previousSlotLabel}
+                isMoved={slot.isMoved}
               />
             ))}
           </div>
@@ -606,6 +1092,7 @@ export function RosterOverview() {
                   key={`bench-${slot.slotIndex}-${slot.playerId}`}
                   slot={slot}
                   onToggleManualLock={toggleManualLock}
+                  hasSwapAndLockAlert={alertBenchPlayerIds.has(slot.playerId)}
                 />
               ))}
             </div>
@@ -665,6 +1152,14 @@ export function RosterOverview() {
           </section>
         </div>
       </div>
+
+      {/* Interactive Sleeper Sync Checklist Drawer */}
+      <SleeperSyncChecklistDrawer
+        isOpen={isSyncDrawerOpen}
+        onClose={() => setIsSyncDrawerOpen(false)}
+        checklist={activeRoster.stagedChecklist}
+        optimization={optimization}
+      />
     </div>
   );
 }

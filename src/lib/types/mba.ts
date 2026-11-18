@@ -362,6 +362,8 @@ export interface HydratedRoster {
   currentWeekProjectedPoints: number;
   currentWeekMatchupId: number | null;
   starterTotalFpg: number;
+  lineupOptimization: RosterLineupOptimization;
+  stagedChecklist: StagedLineupChecklist;
 }
 
 export interface MbaLeagueSnapshot {
@@ -379,6 +381,8 @@ export interface MbaLeagueSnapshot {
   activeRosterId: number;
   activeRoster: HydratedRoster;
   matchupLeverage: MatchupLeverageSummary | null;
+  lineupOptimization: RosterLineupOptimization;
+  stagedChecklist: StagedLineupChecklist;
   syncedAt: string;
 }
 
@@ -489,6 +493,70 @@ export interface ManagerStateStore {
   setPickTierOverride(pickId: string, tier: ProjectedPickTier | null): void;
 }
 
+export interface OptimizedStarterSlotAssignment extends RosterPlayerSlot {
+  slotIndex: number;
+  slotLabel: StarterSlotType;
+  previousSlotLabel: StarterSlotType | 'BN' | 'IR' | 'TAXI';
+  previousSlotIndex: number;
+  isMoved: boolean;
+  optimizerEffectiveScore: number;
+}
+
+export interface SwapAndLockAlert {
+  id: string;
+  benchPlayerId: string;
+  benchPlayerName: string;
+  benchPlayerPositions: string[];
+  benchPlayerTeam: string;
+  lockableScore: number;
+  latestCompletedGamePoints: number;
+  gameOpponent: string | null;
+  gameDate: string | null;
+  targetSlotIndex: number;
+  targetSlotLabel: StarterSlotType;
+  displacedPlayerId: string;
+  displacedPlayerName: string;
+  displacedEffectiveScore: number;
+  deltaPoints: number;
+  netLineupDeltaPoints: number;
+  headline: string;
+  detail: string;
+}
+
+export type RosterEligibilityWarningType = 'INJURED_STARTER' | 'HEALTHY_ON_IR';
+
+export interface RosterEligibilityWarning {
+  id: string;
+  type: RosterEligibilityWarningType;
+  severity: 'ERROR' | 'WARNING';
+  playerId: string;
+  playerName: string;
+  slotLabel: StarterSlotType | 'BN' | 'IR' | 'TAXI';
+  injuryStatus: string | null;
+  hasOpenIrSlot: boolean;
+  message: string;
+  recommendedAction: string;
+}
+
+export interface RosterLineupOptimization {
+  rosterId: number;
+  week: number;
+  currentStarters: OptimizedStarterSlotAssignment[];
+  currentTotalScore: number;
+  actionableOptimalStarters: OptimizedStarterSlotAssignment[];
+  actionableTotalScore: number;
+  actionableDeltaScore: number;
+  hypotheticalOptimalStarters: OptimizedStarterSlotAssignment[];
+  hypotheticalTotalScore: number;
+  hypotheticalDeltaScore: number;
+  recommendedSwaps: StagedSlotSwap[];
+  recommendedLockActions: StagedLockAction[];
+  swapAndLockAlerts: SwapAndLockAlert[];
+  eligibilityWarnings: RosterEligibilityWarning[];
+  warnings: RosterEligibilityWarning[];
+  stagedChecklist: StagedLineupChecklist;
+}
+
 export interface StagedSlotSwap {
   fromSlot: string;
   toSlot: string;
@@ -496,6 +564,7 @@ export interface StagedSlotSwap {
   playerInName: string;
   playerOutId?: string;
   playerOutName?: string;
+  deltaPoints?: number;
   reason: string;
 }
 
@@ -514,6 +583,7 @@ export interface StageLineupPayload {
   week: number;
   slotSwaps: StagedSlotSwap[];
   lockActions: StagedLockAction[];
+  irMoves?: StagedSlotSwap[];
 }
 
 export interface StagedLineupChecklist {
@@ -523,7 +593,7 @@ export interface StagedLineupChecklist {
   sleeperDeepLink: string;
   steps: Array<{
     id: string;
-    type: 'SWAP' | 'LOCK';
+    type: 'SWAP' | 'LOCK' | 'IR';
     title: string;
     detail: string;
   }>;

@@ -4,6 +4,7 @@ import {
   applyMatchupLeverageToRoster,
   evaluatePlayerLockIn,
 } from '../lineup/lock-in-advisor';
+import { evaluateRosterLineupOptimization } from '../lineup/slot-optimizer';
 import { computeMbaPoints, computeSeasonMetrics } from '../scoring/mba-scoring';
 import {
   computeLeaguePowerRankings,
@@ -26,6 +27,7 @@ import {
   PlayerDynastyValuationInput,
   PlayerLockInEvaluation,
   ProjectedPickTier,
+  RosterLineupOptimization,
   RosterPlayerSlot,
   RosterPowerRanking,
   RosterSlotCategory,
@@ -233,6 +235,63 @@ export class MbaLeagueEngine {
    */
   public stageLineupChanges(payload: StageLineupPayload): StagedLineupChecklist {
     return this.mutationAdapter.stageLineupChanges(payload);
+  }
+
+  /**
+   * Evaluates the 2-Center Bipartite Slot Optimizer, Pinned Starter constraints, Hypothetical Best 10,
+   * Swap & Lock Alerts, and IR / injury eligibility warnings for a Roster.
+   */
+  public optimizeRosterLineup(roster: HydratedRoster): RosterLineupOptimization;
+  public optimizeRosterLineup(
+    rosterId?: number,
+    leg?: number
+  ): Promise<RosterLineupOptimization>;
+  public optimizeRosterLineup(
+    rosterOrId?: HydratedRoster | number,
+    leg?: number
+  ): RosterLineupOptimization | Promise<RosterLineupOptimization> {
+    if (rosterOrId && typeof rosterOrId === 'object') {
+      return evaluateRosterLineupOptimization({
+        roster: rosterOrId,
+        leagueId: this.lastLeagueId,
+        week: this.lastWeek,
+        mutationAdapter: this.mutationAdapter,
+      });
+    }
+    return this.gateway.fetchLeagueBundle({ leg }).then((bundle) => {
+      const snapshot = this.buildSnapshotFromBundle(
+        bundle,
+        typeof rosterOrId === 'number' ? rosterOrId : undefined
+      );
+      const targetRoster =
+        typeof rosterOrId === 'number'
+          ? snapshot.rosters.find((r) => r.rosterId === rosterOrId) ?? snapshot.activeRoster
+          : snapshot.activeRoster;
+      return targetRoster.lineupOptimization;
+    });
+  }
+
+  /**
+   * Stages the recommended slot swaps, Lock-In actions, and IR moves for a Roster through LineupMutationAdapter.
+   */
+  public stageRosterLineupSync(roster: HydratedRoster): StagedLineupChecklist;
+  public stageRosterLineupSync(
+    rosterId?: number,
+    leg?: number
+  ): Promise<StagedLineupChecklist>;
+  public stageRosterLineupSync(
+    rosterOrId?: HydratedRoster | number,
+    leg?: number
+  ): StagedLineupChecklist | Promise<StagedLineupChecklist> {
+    if (rosterOrId && typeof rosterOrId === 'object') {
+      return evaluateRosterLineupOptimization({
+        roster: rosterOrId,
+        leagueId: this.lastLeagueId,
+        week: this.lastWeek,
+        mutationAdapter: this.mutationAdapter,
+      }).stagedChecklist;
+    }
+    return this.optimizeRosterLineup(rosterOrId, leg).then((opt) => opt.stagedChecklist);
   }
 
   /**
@@ -549,6 +608,8 @@ export class MbaLeagueEngine {
         currentWeekProjectedPoints,
         currentWeekMatchupId: matchup?.matchup_id ?? null,
         starterTotalFpg,
+        lineupOptimization: null as unknown as RosterLineupOptimization,
+        stagedChecklist: null as unknown as StagedLineupChecklist,
       });
     }
 
@@ -565,6 +626,16 @@ export class MbaLeagueEngine {
       if (leverage) {
         leverageByRosterId.set(roster.rosterId, leverage);
       }
+      // Re-evaluate lineup optimization after Matchup Leverage recommendation badges have been updated
+      const finalOptimization = evaluateRosterLineupOptimization({
+        roster,
+        leagueId,
+        week: currentWeek,
+        maxReserveSlots: bundle.league.settings.reserve_slots ?? 3,
+        mutationAdapter: this.mutationAdapter,
+      });
+      roster.lineupOptimization = finalOptimization;
+      roster.stagedChecklist = finalOptimization.stagedChecklist;
     }
 
     const pickMatrix = resolveDraftPickMatrix({
@@ -598,6 +669,8 @@ export class MbaLeagueEngine {
       activeRosterId: activeRoster.rosterId,
       activeRoster,
       matchupLeverage: leverageByRosterId.get(activeRoster.rosterId) ?? null,
+      lineupOptimization: activeRoster.lineupOptimization,
+      stagedChecklist: activeRoster.stagedChecklist,
       syncedAt: new Date().toISOString(),
     };
   }
