@@ -1022,3 +1022,199 @@ describe('MbaLeagueEngine — 2-Center Bipartite Slot Optimizer, Swap & Lock Ale
   });
 });
 
+describe('MbaLeagueEngine — Non-Linear Dynasty Trade Analyzer & Quick Trade Text Parser Seam', () => {
+  it('prevents the "4 quarters for a dollar" fallacy in uneven 3-for-1 trades by applying Consolidation Premium to elite cornerstones and deducting Replacement Cut Assets from the Roster receiving excess players', async () => {
+    const gateway = new InMemorySleeperGateway(createDeterministicMbaFixtures());
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const snapshot = await engine.getLeagueSnapshot();
+
+    // Roster #1 (Ashley ketchcum) sends 1 elite cornerstone: Victor Wembanyama ('1846')
+    // Roster #2 (Basketball Stinks) sends 3 bench/role players ('r2_p11', 'r2_p12', 'r2_p13')
+    // Even though 3 role players sum to more raw Dynasty Value than 1 superstar,
+    // Roster #1 must cut its 2 lowest-Dynasty-Value Bench (BN) players (Replacement Cut Assets)
+    // and Roster #2 earns a non-linear Consolidation Premium for acquiring Wembanyama.
+    const evaluation = await engine.evaluateTrade(
+      {
+        participants: [
+          {
+            rosterId: 1,
+            outgoingPlayerIds: ['1846'],
+            incomingPlayerIds: ['r2_p11', 'r2_p12', 'r2_p13'],
+          },
+          {
+            rosterId: 2,
+            outgoingPlayerIds: ['r2_p11', 'r2_p12', 'r2_p13'],
+            incomingPlayerIds: ['1846'],
+          },
+        ],
+      },
+      snapshot
+    );
+
+    const side1 = evaluation.participants.find((p) => p.rosterId === 1)!;
+    const side2 = evaluation.participants.find((p) => p.rosterId === 2)!;
+
+    // Raw linear sum of the 3 role players exceeds Wembanyama's single raw value
+    expect(side1.rawIncomingDynastyValue).toBeGreaterThan(side1.rawOutgoingDynastyValue);
+
+    // Roster #1 receives 3 players and sends 1 -> 2 Replacement Cut Assets from Roster #1's lowest-value Bench (BN) slots
+    expect(side1.replacementCutAssets).toHaveLength(2);
+    expect(side1.replacementCutAssets.every((c) => c.slotLabel === 'BN')).toBe(true);
+    expect(side1.replacementCutPenalty).toBeGreaterThan(0);
+
+    // Roster #2 receives 1 player and sends 3 -> 0 Replacement Cut Assets, and receives Consolidation Premium on Wembanyama
+    expect(side2.replacementCutAssets).toHaveLength(0);
+    expect(side2.consolidationPremium).toBeGreaterThan(10);
+
+    // After Consolidation Premium + Replacement Cut Asset accounting, Roster #2 (superstar receiver) wins decisively
+    expect(side2.adjustedDynastyDelta).toBeGreaterThan(20);
+    expect(side1.adjustedDynastyDelta).toBeLessThan(-20);
+    expect(evaluation.winnerRosterId).toBe(2);
+    expect(['A+', 'A']).toContain(side2.letterGrade);
+    expect(['D', 'F']).toContain(side1.letterGrade);
+  });
+
+  it('solves pre-trade and post-trade optimal 10-starter lineups (Starting 10 Δ FP/G), tracks 2-Center depth and age delta, honors manual Projected Pick Tier overrides, and supports 3-team trades and URL encoding', async () => {
+    const gateway = new InMemorySleeperGateway(createDeterministicMbaFixtures());
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const snapshot = await engine.getLeagueSnapshot();
+
+    // Roster #3 (rebuilder) sends 2027 1st ('2027-r1-orig-3') to Roster #4 for Stephen Curry ('r4_p1', age 27 PG, high FP/G)
+    const baseProposal = {
+      participants: [
+        {
+          rosterId: 3,
+          outgoingPickIds: ['2027-r1-orig-3'],
+          incomingPlayerIds: ['r4_p1'],
+        },
+        {
+          rosterId: 4,
+          outgoingPlayerIds: ['r4_p1'],
+          incomingPickIds: ['2027-r1-orig-3'],
+        },
+      ],
+    };
+
+    const lateOverrideEval = engine.evaluateTrade(
+      {
+        ...baseProposal,
+        pickTierOverrides: { '2027-r1-orig-3': 'Late' },
+      },
+      snapshot
+    );
+    const earlyOverrideEval = engine.evaluateTrade(
+      {
+        ...baseProposal,
+        pickTierOverrides: { '2027-r1-orig-3': 'Early' },
+      },
+      snapshot
+    );
+
+    const r3WithLate = lateOverrideEval.participants.find((p) => p.rosterId === 3)!;
+    const r4WithLate = lateOverrideEval.participants.find((p) => p.rosterId === 4)!;
+    const r4WithEarly = earlyOverrideEval.participants.find((p) => p.rosterId === 4)!;
+
+    // Roster #3 acquires high-scoring starter 'r4_p1' (Stephen Curry) and sends only a future pick -> Starting 10 Δ FP/G is positive!
+    expect(r3WithLate.starting10DeltaFppg).toBeGreaterThan(5);
+    expect(r3WithLate.postTradeOptimalStarterFpg).toBeGreaterThan(
+      r3WithLate.preTradeOptimalStarterFpg
+    );
+    expect(r3WithLate.postTradeOptimalStarters).toHaveLength(10);
+
+    // Toggling 2027-r1-orig-3 from Late to Early increases Roster #4's incoming pick Dynasty Value and Adjusted Dynasty Delta
+    expect(r4WithEarly.incomingPicks[0].projectedTier).toBe('Early');
+    expect(r4WithEarly.incomingPicks[0].hasManualTierOverride).toBe(true);
+    expect(r4WithEarly.incomingPicks[0].dynastyValue).toBeGreaterThan(
+      r4WithLate.incomingPicks[0].dynastyValue
+    );
+    expect(r4WithEarly.adjustedDynastyDelta).toBeGreaterThan(r4WithLate.adjustedDynastyDelta);
+
+    // 3-Team Trade across Roster #1, Roster #4, and Roster #10:
+    // Roster #1 sends Alperen Sengun ('1883', C) to Roster #4;
+    // Roster #4 sends Anthony Davis ('r4_p7', C, age 27) to Roster #10;
+    // Roster #10 sends Giannis Antetokounmpo ('r10_p5', PF/C, age 26) to Roster #1
+    const threeTeamProposal = {
+      participants: [
+        {
+          rosterId: 1,
+          outgoingPlayerIds: ['1883'],
+          incomingPlayerIds: ['r10_p5'],
+          outgoingPickIds: ['2028-r1-orig-10'],
+        },
+        {
+          rosterId: 4,
+          outgoingPlayerIds: ['r4_p7'],
+          incomingPlayerIds: ['1883'],
+        },
+        {
+          rosterId: 10,
+          outgoingPlayerIds: ['r10_p5'],
+          incomingPlayerIds: ['r4_p7'],
+          incomingPickIds: ['2028-r1-orig-10'],
+        },
+      ],
+      pickTierOverrides: { '2028-r1-orig-10': 'Early' as const },
+    };
+
+    const threeTeamEval = engine.evaluateTrade(threeTeamProposal, snapshot);
+    expect(threeTeamEval.participants).toHaveLength(3);
+    expect(threeTeamEval.participants.every((p) => p.takeaways.length >= 2)).toBe(true);
+
+    // Verify URL state round-trip encoding & decoding
+    const encoded = engine.encodeTradeUrlParam(threeTeamProposal);
+    expect(encoded.length).toBeGreaterThan(10);
+    const decoded = engine.decodeTradeUrlParam(encoded);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.participants).toHaveLength(3);
+    expect(decoded!.pickTierOverrides?.['2028-r1-orig-10']).toBe('Early');
+  });
+
+  it('parses freeform trade descriptions via Quick Trade Text Parser (parseTradeText) into a structured TradeProposal ready for evaluateTrade', async () => {
+    const gateway = new InMemorySleeperGateway(createDeterministicMbaFixtures());
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const snapshot = await engine.getLeagueSnapshot();
+
+    // Example 1: Canonical ticket string with team names, player names, and 2027/2028 pick tokens
+    const rawText1 =
+      'Reefer Chiefers receives Giannis Antetokounmpo, 2028 1st; Ashley ketchcum receives Alperen Sengun, 2027 1st, 2027 2nd';
+    const parsed1 = await engine.parseTradeText(rawText1, snapshot);
+
+    expect(parsed1.proposal.participants).toHaveLength(2);
+    const pReefer = parsed1.proposal.participants.find((p) => p.rosterId === 10)!;
+    const pAshley = parsed1.proposal.participants.find((p) => p.rosterId === 1)!;
+
+    expect(pReefer).toBeDefined();
+    expect(pAshley).toBeDefined();
+    expect(pReefer.incomingPlayerIds).toContain('r10_p5'); // Giannis Antetokounmpo
+    expect(pReefer.incomingPickIds?.some((id) => id.startsWith('2028-r1-'))).toBe(true);
+    expect(pAshley.incomingPlayerIds).toContain('1883'); // Alperen Sengun
+    expect(pAshley.incomingPickIds?.some((id) => id.startsWith('2027-r1-'))).toBe(true);
+    expect(pAshley.incomingPickIds?.some((id) => id.startsWith('2027-r2-'))).toBe(true);
+
+    // Evaluate the parsed proposal directly
+    const eval1 = engine.evaluateTrade(parsed1.proposal, snapshot);
+    expect(eval1.participants).toHaveLength(2);
+    expect(eval1.participants.find((p) => p.rosterId === 10)?.incomingPlayers[0].fullName).toBe(
+      'Giannis Antetokounmpo'
+    );
+    expect(eval1.participants.find((p) => p.rosterId === 1)?.incomingPlayers[0].fullName).toBe(
+      'Alperen Sengun'
+    );
+
+    // Example 2: Roster # syntax + "+" delimiters + surname matching
+    const rawText2 =
+      'Roster 1 gets Doncic + 2026 Early 1st, Roster 10 gets Booker + 2028 2nd';
+    const parsed2 = engine.parseTradeText(rawText2, snapshot);
+    expect(parsed2.proposal.participants.map((p) => p.rosterId)).toEqual([1, 10]);
+    expect(parsed2.proposal.participants[0].incomingPlayerIds).toContain('r10_p1'); // Luka Doncic
+    expect(parsed2.proposal.participants[1].incomingPlayerIds).toContain('1648'); // Devin Booker
+    expect(Object.values(parsed2.proposal.pickTierOverrides ?? {})).toContain('Early');
+  });
+});
+
