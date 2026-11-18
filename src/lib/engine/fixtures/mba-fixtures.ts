@@ -1,0 +1,453 @@
+import {
+  DEFAULT_MBA_SCORING_SETTINGS,
+  MBA_LEAGUE_ID_2025,
+  MBA_LEAGUE_ID_2026,
+  SleeperLeagueBundle,
+  SleeperPlayer,
+} from '../../types/mba';
+
+const SEED_PLAYERS: Record<string, SleeperPlayer> = {
+  '2301': {
+    player_id: '2301',
+    first_name: 'Shai',
+    last_name: 'Gilgeous-Alexander',
+    full_name: 'Shai Gilgeous-Alexander',
+    age: 28,
+    years_exp: 8,
+    position: 'PG',
+    fantasy_positions: ['PG'],
+    team: 'OKC',
+    injury_status: null,
+  },
+  '1648': {
+    player_id: '1648',
+    first_name: 'Devin',
+    last_name: 'Booker',
+    full_name: 'Devin Booker',
+    age: 29,
+    years_exp: 11,
+    position: 'SG',
+    fantasy_positions: ['PG', 'SG'],
+    team: 'PHX',
+    injury_status: null,
+  },
+  '1967': {
+    player_id: '1967',
+    first_name: 'Tyrese',
+    last_name: 'Haliburton',
+    full_name: 'Tyrese Haliburton',
+    age: 26,
+    years_exp: 6,
+    position: 'PG',
+    fantasy_positions: ['PG', 'SG'],
+    team: 'IND',
+    injury_status: null,
+  },
+  '2304': {
+    player_id: '2304',
+    first_name: 'Jayson',
+    last_name: 'Tatum',
+    full_name: 'Jayson Tatum',
+    age: 28,
+    years_exp: 9,
+    position: 'SF',
+    fantasy_positions: ['SF', 'PF'],
+    team: 'BOS',
+    injury_status: null,
+  },
+  '1988': {
+    player_id: '1988',
+    first_name: 'Paolo',
+    last_name: 'Banchero',
+    full_name: 'Paolo Banchero',
+    age: 23,
+    years_exp: 4,
+    position: 'PF',
+    fantasy_positions: ['PF', 'SF'],
+    team: 'ORL',
+    injury_status: null,
+  },
+  '1739': {
+    player_id: '1739',
+    first_name: 'Scottie',
+    last_name: 'Barnes',
+    full_name: 'Scottie Barnes',
+    age: 25,
+    years_exp: 5,
+    position: 'SF',
+    fantasy_positions: ['SF', 'PF', 'SG'],
+    team: 'TOR',
+    injury_status: null,
+  },
+  '1846': {
+    player_id: '1846',
+    first_name: 'Victor',
+    last_name: 'Wembanyama',
+    full_name: 'Victor Wembanyama',
+    age: 22,
+    years_exp: 3,
+    position: 'C',
+    fantasy_positions: ['C', 'PF'],
+    team: 'SAS',
+    injury_status: null,
+  },
+  '1511': {
+    player_id: '1511',
+    first_name: 'Nikola',
+    last_name: 'Jokic',
+    full_name: 'Nikola Jokic',
+    age: 31,
+    years_exp: 11,
+    position: 'C',
+    fantasy_positions: ['C'],
+    team: 'DEN',
+    injury_status: null,
+  },
+  '2580': {
+    player_id: '2580',
+    first_name: 'Anthony',
+    last_name: 'Edwards',
+    full_name: 'Anthony Edwards',
+    age: 25,
+    years_exp: 6,
+    position: 'SG',
+    fantasy_positions: ['SG', 'SF'],
+    team: 'MIN',
+    injury_status: null,
+  },
+  '4922': {
+    player_id: '4922',
+    first_name: 'Cooper',
+    last_name: 'Flagg',
+    full_name: 'Cooper Flagg',
+    age: 19,
+    years_exp: 1,
+    position: 'PF',
+    fantasy_positions: ['PF', 'SF'],
+    team: 'WAS',
+    injury_status: null,
+  },
+  '1883': {
+    player_id: '1883',
+    first_name: 'Alperen',
+    last_name: 'Sengun',
+    full_name: 'Alperen Sengun',
+    age: 24,
+    years_exp: 5,
+    position: 'C',
+    fantasy_positions: ['C'],
+    team: 'HOU',
+    injury_status: null,
+  },
+  '2136': {
+    player_id: '2136',
+    first_name: 'Jalen',
+    last_name: 'Williams',
+    full_name: 'Jalen Williams',
+    age: 25,
+    years_exp: 4,
+    position: 'SF',
+    fantasy_positions: ['SG', 'SF', 'PF'],
+    team: 'OKC',
+    injury_status: null,
+  },
+  '2449': {
+    player_id: '2449',
+    first_name: 'Amen',
+    last_name: 'Thompson',
+    full_name: 'Amen Thompson',
+    age: 23,
+    years_exp: 3,
+    position: 'PG',
+    fantasy_positions: ['PG', 'SG', 'SF'],
+    team: 'HOU',
+    injury_status: null,
+  },
+  '2713': {
+    player_id: '2713',
+    first_name: 'Trey',
+    last_name: 'Murphy III',
+    full_name: 'Trey Murphy III',
+    age: 26,
+    years_exp: 5,
+    position: 'SF',
+    fantasy_positions: ['SF', 'PF'],
+    team: 'NOP',
+    injury_status: null,
+  },
+  '2772': {
+    player_id: '2772',
+    first_name: 'Dyson',
+    last_name: 'Daniels',
+    full_name: 'Dyson Daniels',
+    age: 23,
+    years_exp: 4,
+    position: 'PG',
+    fantasy_positions: ['PG', 'SG'],
+    team: 'ATL',
+    injury_status: null,
+  },
+  '1713': {
+    player_id: '1713',
+    first_name: 'Chet',
+    last_name: 'Holmgren',
+    full_name: 'Chet Holmgren',
+    age: 24,
+    years_exp: 3,
+    position: 'C',
+    fantasy_positions: ['C', 'PF'],
+    team: 'OKC',
+    injury_status: 'Out',
+    injury_notes: 'Hip fracture rehab',
+  },
+  '2458': {
+    player_id: '2458',
+    first_name: 'Ja',
+    last_name: 'Morant',
+    full_name: 'Ja Morant',
+    age: 27,
+    years_exp: 7,
+    position: 'PG',
+    fantasy_positions: ['PG'],
+    team: 'MEM',
+    injury_status: 'IR',
+    injury_notes: 'Shoulder',
+  },
+  '4756': {
+    player_id: '4756',
+    first_name: 'Reed',
+    last_name: 'Sheppard',
+    full_name: 'Reed Sheppard',
+    age: 22,
+    years_exp: 2,
+    position: 'PG',
+    fantasy_positions: ['PG', 'SG'],
+    team: 'HOU',
+    injury_status: null,
+  },
+  '4868': {
+    player_id: '4868',
+    first_name: 'Stephon',
+    last_name: 'Castle',
+    full_name: 'Stephon Castle',
+    age: 21,
+    years_exp: 2,
+    position: 'PG',
+    fantasy_positions: ['PG', 'SG'],
+    team: 'SAS',
+    injury_status: null,
+  },
+  '4895': {
+    player_id: '4895',
+    first_name: 'Alexandre',
+    last_name: 'Sarr',
+    full_name: 'Alexandre Sarr',
+    age: 21,
+    years_exp: 2,
+    position: 'C',
+    fantasy_positions: ['C', 'PF'],
+    team: 'WAS',
+    injury_status: null,
+  },
+};
+
+const REAL_MANAGERS = [
+  { rosterId: 1, userId: '1126319626859696128', displayName: 'moir', teamName: 'Ashley ketchcum', wins: 3, losses: 1, fpts: 1088, ppts: 1187 },
+  { rosterId: 2, userId: '1125827835333005312', displayName: 'G0inInDry', teamName: 'Basketball Stinks', wins: 1, losses: 3, fpts: 965, ppts: 1023 },
+  { rosterId: 3, userId: '1126982367006150656', displayName: 'roost4r', teamName: 'Ash Ketchum', wins: 1, losses: 3, fpts: 798.5, ppts: 907 },
+  { rosterId: 4, userId: '1127048932875448320', displayName: 'mikededmon', teamName: 'Cobra Clutch', wins: 4, losses: 0, fpts: 1291, ppts: 1391 },
+  { rosterId: 5, userId: '1133775261067059200', displayName: 'testycles', teamName: 'MeMoiralday Farm League', wins: 0, losses: 4, fpts: 851.5, ppts: 1023.5 },
+  { rosterId: 6, userId: '1343279815708385280', displayName: 'BilltheHorse', teamName: 'Polygondwanalanders', wins: 1, losses: 3, fpts: 920, ppts: 986 },
+  { rosterId: 7, userId: '1135637034133000192', displayName: 'Open4Trades', teamName: 'Golden State Hospice', wins: 2, losses: 2, fpts: 1071.5, ppts: 1169 },
+  { rosterId: 8, userId: '1127711899124232192', displayName: 'Sarki', teamName: '2027 MBA Champions', wins: 4, losses: 0, fpts: 1135.5, ppts: 1189.5 },
+  { rosterId: 9, userId: '1148826138878799872', displayName: 'nakowafers', teamName: '', wins: 2, losses: 2, fpts: 920.5, ppts: 999 },
+  { rosterId: 10, userId: '998093128479514624', displayName: 'Nightmare42022', teamName: 'Reefer Chiefers', wins: 2, losses: 2, fpts: 1131, ppts: 1213 },
+];
+
+export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
+  const players: Record<string, SleeperPlayer> = { ...SEED_PLAYERS };
+
+  // Also generate deterministic players for rosters 2..10 so every roster has 10 starters, 3 bench, 2 reserve, 2 taxi
+  for (let r = 2; r <= 10; r++) {
+    const positions = ['PG', 'SG', 'PG', 'SF', 'PF', 'SF', 'C', 'C', 'SG', 'PF', 'PG', 'SF', 'C', 'SG', 'PF', 'PG', 'C'];
+    positions.forEach((pos, idx) => {
+      const pid = `r${r}_p${idx + 1}`;
+      players[pid] = {
+        player_id: pid,
+        first_name: `Player`,
+        last_name: `${r}-${idx + 1}`,
+        full_name: `Player ${r}-${idx + 1}`,
+        age: 22 + (idx % 8),
+        years_exp: 2 + (idx % 6),
+        position: pos,
+        fantasy_positions: [pos],
+        team: 'NBA',
+        injury_status: idx === 13 || idx === 14 ? 'Out' : null,
+      };
+    });
+  }
+
+  const users = REAL_MANAGERS.map((m) => ({
+    user_id: m.userId,
+    display_name: m.displayName,
+    avatar: 'avatar_hash',
+    metadata: {
+      team_name: m.teamName,
+    },
+  }));
+
+  const roster1Starters = ['2301', '1648', '1967', '2304', '1988', '1739', '1846', '1511', '2580', '4922'];
+  const roster1Bench = ['1883', '2136', '2449', '2713', '2772'];
+  const roster1Reserve = ['1713', '2458'];
+  const roster1Taxi = ['4756', '4868', '4895'];
+  const roster1All = [...roster1Starters, ...roster1Bench, ...roster1Reserve, ...roster1Taxi];
+
+  const rosters = REAL_MANAGERS.map((m) => {
+    if (m.rosterId === 1) {
+      return {
+        roster_id: 1,
+        owner_id: m.userId,
+        starters: roster1Starters,
+        players: roster1All,
+        reserve: roster1Reserve,
+        taxi: roster1Taxi,
+        settings: {
+          wins: m.wins,
+          losses: m.losses,
+          ties: 0,
+          fpts: Math.floor(m.fpts),
+          fpts_decimal: Math.round((m.fpts % 1) * 100),
+          fpts_against: 1050,
+          fpts_against_decimal: 0,
+          ppts: Math.floor(m.ppts),
+          ppts_decimal: Math.round((m.ppts % 1) * 100),
+        },
+      };
+    }
+
+    const rStarters = Array.from({ length: 10 }, (_, idx) => `r${m.rosterId}_p${idx + 1}`);
+    const rBench = [`r${m.rosterId}_p11`, `r${m.rosterId}_p12`, `r${m.rosterId}_p13`];
+    const rReserve = [`r${m.rosterId}_p14`, `r${m.rosterId}_p15`];
+    const rTaxi = [`r${m.rosterId}_p16`, `r${m.rosterId}_p17`];
+
+    return {
+      roster_id: m.rosterId,
+      owner_id: m.userId,
+      starters: rStarters,
+      players: [...rStarters, ...rBench, ...rReserve, ...rTaxi],
+      reserve: rReserve,
+      taxi: rTaxi,
+      settings: {
+        wins: m.wins,
+        losses: m.losses,
+        ties: 0,
+        fpts: Math.floor(m.fpts),
+        fpts_decimal: Math.round((m.fpts % 1) * 100),
+        fpts_against: 1000,
+        fpts_against_decimal: 0,
+        ppts: Math.floor(m.ppts),
+        ppts_decimal: Math.round((m.ppts % 1) * 100),
+      },
+    };
+  });
+
+  const seasonStats = Object.keys(players).map((pid, index) => {
+    if (pid === '1511') {
+      // Nikola Jokic deterministic statline across 10 games:
+      // 300 pts (150), 130 reb (130), 100 ast (100), 15 stl (30), 10 blk (20), 20 tpm (10),
+      // 30 to (-30), 0 tf, 0 ff, 10 dd (+10), 6 td (+12), 2 bonus_pt_40p (+4), 1 bonus_pt_50p (+2)
+      // Total = 150 + 130 + 100 + 30 + 20 + 10 - 30 + 10 + 12 + 4 + 2 = 438.0 -> 43.8 FP/G
+      return {
+        player_id: pid,
+        date: null,
+        opponent: null,
+        game_id: 'season',
+        season: '2026',
+        week: null,
+        team: 'DEN',
+        stats: {
+          gp: 10,
+          pts: 300,
+          reb: 130,
+          ast: 100,
+          stl: 15,
+          blk: 10,
+          tpm: 20,
+          to: 30,
+          dd: 10,
+          td: 6,
+          bonus_pt_40p: 2,
+          bonus_pt_50p: 1,
+        },
+      };
+    }
+
+    return {
+      player_id: pid,
+      date: null,
+      opponent: null,
+      game_id: 'season',
+      season: '2026',
+      week: null,
+      team: players[pid].team,
+      stats: {
+        gp: 10,
+        pts: 220 - (index % 7) * 10,
+        reb: 70 + (index % 5) * 10,
+        ast: 50 + (index % 4) * 10,
+        stl: 10,
+        blk: 8,
+        tpm: 18,
+        to: 20,
+        dd: 4,
+        td: 0,
+      },
+    };
+  });
+
+  const matchups = rosters.map((r, idx) => ({
+    roster_id: r.roster_id,
+    matchup_id: Math.floor(idx / 2) + 1,
+    points: 245.5,
+    starters: r.starters,
+    starters_points: r.starters.map((_, sIdx) => 20 + sIdx * 1.5),
+    players: r.players,
+    players_points: Object.fromEntries(r.players.map((pid, pIdx) => [pid, 15 + (pIdx % 10) * 2.5])),
+  }));
+
+  return {
+    nbaState: {
+      week: 5,
+      leg: 5,
+      season: '2026',
+      season_type: 'regular',
+      display_week: 5,
+    },
+    league: {
+      league_id: MBA_LEAGUE_ID_2026,
+      name: 'MBA',
+      sport: 'nba',
+      season: '2026',
+      previous_league_id: MBA_LEAGUE_ID_2025,
+      status: 'in_season',
+      roster_positions: ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'C', 'UTIL', 'UTIL', 'BN', 'BN', 'BN', 'BN', 'BN'],
+      scoring_settings: { ...DEFAULT_MBA_SCORING_SETTINGS },
+      settings: {
+        num_teams: 10,
+        draft_rounds: 2,
+        reserve_slots: 3,
+        taxi_slots: 3,
+        game_mode: 1,
+        leg: 5,
+      },
+    },
+    users,
+    rosters,
+    matchups,
+    tradedPicks: [],
+    players,
+    seasonStats,
+    weeklyStats: [],
+    weeklyProjections: [],
+  };
+}
