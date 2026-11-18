@@ -1,5 +1,6 @@
 import { createDeterministicMbaFixtures } from '../engine/fixtures/mba-fixtures';
 import {
+  MBA_LEAGUE_ID_2025,
   MBA_LEAGUE_ID_2026,
   SleeperGameStatEntry,
   SleeperGateway,
@@ -66,28 +67,44 @@ export class HttpSleeperGateway implements SleeperGateway {
         for (const pid of r.taxi ?? []) rosterPlayerIds.add(pid);
       }
 
-      const [matchups, seasonStatsRaw, weeklyStatsRaw, weeklyProjRaw, fullPlayersDict] =
-        await Promise.all([
-          fetchJson<SleeperMatchup[]>(
-            `https://api.sleeper.app/v1/league/${this.leagueId}/matchups/${activeLeg}`,
-            force
-          ),
-          fetchJson<SleeperGameStatEntry[]>(
-            `https://api.sleeper.com/stats/nba/${season}?season_type=regular`,
-            force
-          ),
-          fetchJson<SleeperGameStatEntry[]>(
-            `https://api.sleeper.com/stats/nba/${season}/${activeLeg}?season_type=regular`,
-            force
-          ),
-          fetchJson<SleeperGameStatEntry[]>(
-            `https://api.sleeper.com/projections/nba/${season}/${activeLeg}?season_type=regular`,
-            force
-          ),
-          this.getPlayersDictionary(),
-        ]);
+      const [
+        matchups,
+        seasonStatsRaw,
+        weeklyStatsRaw,
+        weeklyProjRaw,
+        fullPlayersDict,
+        historicalTransactions,
+      ] = await Promise.all([
+        fetchJson<SleeperMatchup[]>(
+          `https://api.sleeper.app/v1/league/${this.leagueId}/matchups/${activeLeg}`,
+          force
+        ),
+        fetchJson<SleeperGameStatEntry[]>(
+          `https://api.sleeper.com/stats/nba/${season}?season_type=regular`,
+          force
+        ),
+        fetchJson<SleeperGameStatEntry[]>(
+          `https://api.sleeper.com/stats/nba/${season}/${activeLeg}?season_type=regular`,
+          force
+        ),
+        fetchJson<SleeperGameStatEntry[]>(
+          `https://api.sleeper.com/projections/nba/${season}/${activeLeg}?season_type=regular`,
+          force
+        ),
+        this.getPlayersDictionary(),
+        this.fetchMultiSeasonTrades(
+          this.leagueId,
+          league.previous_league_id || MBA_LEAGUE_ID_2025,
+          activeLeg
+        ),
+      ]);
 
-      // Prune to roster players + top 300 active NBA players to keep client payloads snappy
+      for (const tx of historicalTransactions) {
+        for (const pid of Object.keys(tx.adds ?? {})) rosterPlayerIds.add(pid);
+        for (const pid of Object.keys(tx.drops ?? {})) rosterPlayerIds.add(pid);
+      }
+
+      // Prune to roster players + traded players + top active NBA players to keep client payloads snappy
       const players: Record<string, SleeperPlayer> = {};
       for (const pid of rosterPlayerIds) {
         if (fullPlayersDict[pid]) {
@@ -114,6 +131,7 @@ export class HttpSleeperGateway implements SleeperGateway {
         rosters,
         matchups,
         tradedPicks,
+        transactions: historicalTransactions,
         players,
         seasonStats,
         weeklyStats,
@@ -127,11 +145,47 @@ export class HttpSleeperGateway implements SleeperGateway {
 
   async fetchTransactions(leagueId: string, leg: number): Promise<SleeperTransaction[]> {
     try {
-      return await fetchJson<SleeperTransaction[]>(
+      const season = leagueId === MBA_LEAGUE_ID_2025 ? '2025' : '2026';
+      const raw = await fetchJson<SleeperTransaction[]>(
         `https://api.sleeper.app/v1/league/${leagueId}/transactions/${leg}`
       );
+      return raw.map((tx) => ({
+        ...tx,
+        season: tx.season ?? season,
+        league_id: tx.league_id ?? leagueId,
+      }));
     } catch {
       return [];
+    }
+  }
+
+  private async fetchMultiSeasonTrades(
+    leagueId2026: string,
+    leagueId2025: string,
+    currentLeg2026: number
+  ): Promise<SleeperTransaction[]> {
+    try {
+      const legs2026 = Array.from({ length: Math.max(1, currentLeg2026) }, (_, i) => i + 1);
+      const legs2025 = Array.from({ length: 18 }, (_, i) => i + 1);
+
+      const [tx2026Arrays, tx2025Arrays] = await Promise.all([
+        Promise.all(legs2026.map((leg) => this.fetchTransactions(leagueId2026, leg))),
+        Promise.all(legs2025.map((leg) => this.fetchTransactions(leagueId2025, leg))),
+      ]);
+
+      const byId = new Map<string, SleeperTransaction>();
+      for (const tx of [...tx2025Arrays.flat(), ...tx2026Arrays.flat()]) {
+        if (tx.type === 'trade' && tx.status === 'complete') {
+          byId.set(tx.transaction_id, tx);
+        }
+      }
+
+      if (byId.size > 0) {
+        return [...byId.values()];
+      }
+      return createDeterministicMbaFixtures().transactions ?? [];
+    } catch {
+      return createDeterministicMbaFixtures().transactions ?? [];
     }
   }
 

@@ -341,8 +341,13 @@ export function evaluateDynastyTrade(params: {
     snapshot.rosters.map((r) => [r.rosterId, r])
   );
 
-  // Build global player lookup across all rosters
+  // Build global player lookup across all rosters (plus any catalog players from historical trades)
   const playerSlotById = new Map<string, { slot: RosterPlayerSlot; ownerRosterId: number }>();
+  if (snapshot.playerCatalog) {
+    for (const [pid, slot] of Object.entries(snapshot.playerCatalog)) {
+      playerSlotById.set(pid, { slot, ownerRosterId: 0 });
+    }
+  }
   for (const roster of snapshot.rosters) {
     for (const slot of roster.allPlayers) {
       playerSlotById.set(slot.playerId, { slot, ownerRosterId: roster.rosterId });
@@ -429,8 +434,36 @@ export function evaluateDynastyTrade(params: {
     };
 
     const buildPickAsset = (pickId: string, direction: 'IN' | 'OUT'): EvaluatedTradePickAsset | null => {
-      const pick = pickById.get(pickId);
-      if (!pick) return null;
+      let pick = pickById.get(pickId);
+      if (!pick) {
+        const match = /^(\d{4})-r(1|2)-orig-(\d+)$/.exec(pickId);
+        if (!match) return null;
+        const season = (['2026', '2027', '2028', '2029'].includes(match[1]) ? match[1] : '2026') as DraftPickAsset['season'];
+        const round = Number.parseInt(match[2], 10) as 1 | 2;
+        const origRosterId = Number.parseInt(match[3], 10);
+        const templatePick = pickById.get(`2026-r${round}-orig-${origRosterId}`);
+        const origRosterName =
+          rosterById.get(origRosterId)?.manager.rosterName ?? `Roster #${origRosterId}`;
+        const roundOrdinal = round === 1 ? '1st' : '2nd';
+        pick = {
+          id: pickId,
+          season,
+          round,
+          originalRosterId: origRosterId,
+          originalRosterName: origRosterName,
+          currentOwnerRosterId: origRosterId,
+          currentOwnerRosterName: origRosterName,
+          ownerRosterId: origRosterId,
+          ownerRosterName: origRosterName,
+          isTraded: true,
+          viaAnnotation: `via Roster #${origRosterId} (${origRosterName})`,
+          displayLabel: `${match[1]} ${roundOrdinal} via Roster #${origRosterId}`,
+          projectedSlot: templatePick?.projectedSlot ?? 5,
+          projectedTier: templatePick?.projectedTier ?? 'Mid',
+          hasManualTierOverride: false,
+          dynastyValue: templatePick?.dynastyValue ?? (round === 1 ? 46 : 15),
+        };
+      }
       const fromRosterId =
         direction === 'OUT'
           ? part.rosterId

@@ -79,7 +79,13 @@ function GradeBadge({ grade }: { grade: TradeLetterGrade }) {
   );
 }
 
-export function DynastyTradeBuilder() {
+export function DynastyTradeBuilder({
+  externalProposal,
+  onExternalProposalConsumed,
+}: {
+  externalProposal?: TradeProposal | null;
+  onExternalProposalConsumed?: () => void;
+} = {}) {
   const { engine, snapshot, activeRosterId } = useMbaLeague();
 
   const [teamCount, setTeamCount] = useState<2 | 3>(2);
@@ -239,6 +245,14 @@ export function DynastyTradeBuilder() {
       }
     }
   }, [applyProposalToState, engine]);
+
+  // Apply external proposal when loaded from Completed League Trade Grader
+  useEffect(() => {
+    if (!externalProposal) return;
+    applyProposalToState(externalProposal);
+    setParserStatus('Loaded Historical MBA Trade into Trade Builder');
+    onExternalProposalConsumed?.();
+  }, [externalProposal, applyProposalToState, onExternalProposalConsumed]);
 
   // Build active TradeProposal from current state
   const currentProposal: TradeProposal = useMemo(() => {

@@ -16,12 +16,19 @@ import {
   encodeTradeProposalToQueryParam,
   evaluateDynastyTrade,
 } from '../trades/trade-analyzer';
+import {
+  evaluateHistoricalLeagueTrades,
+  filterGradedHistoricalTrades,
+} from '../trades/historical-trade-grader';
 import { parseFreeformTradeText } from '../trades/trade-text-parser';
 import {
   DEFAULT_MBA_SCORING_SETTINGS,
   DraftPickMatrix,
+  GradedHistoricalTrade,
+  HistoricalTradeFilterOptions,
   HydratedRoster,
   LineupMutationAdapter,
+  MBA_LEAGUE_ID_2025,
   MBA_LEAGUE_ID_2026,
   MBA_STARTER_SLOTS,
   Manager,
@@ -43,6 +50,7 @@ import {
   SleeperLeagueBundle,
   SleeperPlayer,
   SleeperStatLine,
+  SleeperTransaction,
   StageLineupPayload,
   StagedLineupChecklist,
   StarterSlotType,
@@ -219,6 +227,73 @@ export class MbaLeagueEngine {
    */
   public decodeTradeUrlParam(encoded: string | null | undefined): TradeProposal | null {
     return decodeTradeProposalFromQueryParam(encoded);
+  }
+
+  /**
+   * Fetches and grades all completed historical trades across the 2026 (1344293979830640640)
+   * and 2025 (1212393765696700416) MBA seasons using the ADR-0002 dual-axis trade analyzer,
+   * detects chronological Flipped Asset chains, and filters by season ('2026' | '2025' | 'ALL')
+   * and/or participating Manager / Roster.
+   */
+  public gradeHistoricalTrades(
+    options: HistoricalTradeFilterOptions | undefined,
+    snapshot: MbaLeagueSnapshot
+  ): GradedHistoricalTrade[];
+  public gradeHistoricalTrades(
+    options?: HistoricalTradeFilterOptions
+  ): Promise<GradedHistoricalTrade[]>;
+  public gradeHistoricalTrades(
+    options?: HistoricalTradeFilterOptions,
+    snapshot?: MbaLeagueSnapshot
+  ): GradedHistoricalTrade[] | Promise<GradedHistoricalTrade[]> {
+    if (snapshot) {
+      if (snapshot.historicalTrades && snapshot.historicalTrades.length > 0) {
+        return filterGradedHistoricalTrades(snapshot.historicalTrades, options);
+      }
+      return evaluateHistoricalLeagueTrades({
+        transactions: snapshot.transactions ?? [],
+        snapshot,
+        stateStore: this.stateStore,
+        options,
+      });
+    }
+
+    return this.getLeagueSnapshot().then(async (snap) => {
+      const txById = new Map<string, SleeperTransaction>();
+      for (const tx of snap.transactions ?? []) {
+        txById.set(tx.transaction_id, tx);
+      }
+
+      if (this.gateway.fetchTransactions) {
+        const legs2026 = Array.from({ length: Math.max(1, snap.currentLeg) }, (_, i) => i + 1);
+        const legs2025 = Array.from({ length: 18 }, (_, i) => i + 1);
+        const [extra2026, extra2025] = await Promise.all([
+          Promise.all(legs2026.map((leg) => this.gateway.fetchTransactions!(MBA_LEAGUE_ID_2026, leg))),
+          Promise.all(legs2025.map((leg) => this.gateway.fetchTransactions!(MBA_LEAGUE_ID_2025, leg))),
+        ]);
+        for (const tx of extra2025.flat()) {
+          txById.set(tx.transaction_id, {
+            ...tx,
+            season: tx.season ?? '2025',
+            league_id: tx.league_id ?? MBA_LEAGUE_ID_2025,
+          });
+        }
+        for (const tx of extra2026.flat()) {
+          txById.set(tx.transaction_id, {
+            ...tx,
+            season: tx.season ?? '2026',
+            league_id: tx.league_id ?? MBA_LEAGUE_ID_2026,
+          });
+        }
+      }
+
+      return evaluateHistoricalLeagueTrades({
+        transactions: [...txById.values()],
+        snapshot: snap,
+        stateStore: this.stateStore,
+        options,
+      });
+    });
   }
 
   /**
@@ -729,7 +804,85 @@ export class MbaLeagueEngine {
     const activeRoster =
       hydratedRosters.find((r) => r.rosterId === desiredRosterId) ?? hydratedRosters[0];
 
-    return {
+    // Build global playerCatalog including all rostered players + any additional historical players in bundle.players
+    const playerCatalog: Record<string, RosterPlayerSlot> = {};
+    for (const r of hydratedRosters) {
+      for (const p of r.allPlayers) {
+        playerCatalog[p.playerId] = p;
+      }
+    }
+    for (const [pid, pInfo] of Object.entries(bundle.players ?? {})) {
+      if (playerCatalog[pid]) continue;
+      const seasonEntry = seasonStatByPlayerId.get(pid);
+      const fallbackPlayer = seasonEntry?.player;
+      const firstName = pInfo?.first_name ?? fallbackPlayer?.first_name ?? 'Unknown';
+      const lastName = pInfo?.last_name ?? fallbackPlayer?.last_name ?? pid;
+      const fullName = pInfo?.full_name ?? `${firstName} ${lastName}`.trim();
+      const nbaTeam = pInfo?.team ?? fallbackPlayer?.team ?? seasonEntry?.team ?? 'FA';
+      const positions =
+        pInfo?.fantasy_positions?.length
+          ? pInfo.fantasy_positions
+          : fallbackPlayer?.fantasy_positions?.length
+            ? fallbackPlayer.fantasy_positions
+            : pInfo?.position
+              ? [pInfo.position]
+              : ['UTIL'];
+      const age = pInfo?.age ?? null;
+      const yearsExp = pInfo?.years_exp ?? fallbackPlayer?.years_exp ?? null;
+      const seasonMetrics = computeSeasonMetrics(seasonEntry?.stats, scoringSettings);
+      const { dynastyValue } = computePlayerDynastyValue({
+        actualFpg: seasonMetrics.mbaFantasyPointsPerGame,
+        gamesPlayed: seasonMetrics.gamesPlayed,
+        projectedFpg: null,
+        age,
+        positions,
+      });
+      const lockIn = evaluatePlayerLockIn({
+        category: 'BENCH',
+        currentWeekMatchupPoints: 0,
+        seasonFpg: seasonMetrics.mbaFantasyPointsPerGame,
+        completedEntries: [],
+        projectionEntries: [],
+        scoringSettings,
+        manualLockOverride: null,
+      });
+      playerCatalog[pid] = {
+        slotIndex: 0,
+        slotLabel: 'BN',
+        category: 'BENCH',
+        playerId: pid,
+        fullName,
+        firstName,
+        lastName,
+        nbaTeam,
+        positions,
+        injuryStatus: pInfo?.injury_status ?? null,
+        injuryNotes: pInfo?.injury_notes ?? null,
+        age,
+        yearsExp,
+        seasonMetrics,
+        currentWeekMatchupPoints: 0,
+        currentWeekCompletedGamesCount: 0,
+        currentWeekRemainingGamesCount: 0,
+        latestCompletedGamePoints: null,
+        completedGames: [],
+        remainingGames: [],
+        isLocked: false,
+        isPinnedStarter: false,
+        lockedScore: null,
+        isLockInWindowOpen: false,
+        lockInThreshold: lockIn.lockInThreshold,
+        effectiveWeeklyScore: lockIn.effectiveWeeklyScore,
+        recommendation: lockIn.recommendation,
+        leverageAnnotation: null,
+        lockIn,
+        dynastyValue,
+      };
+    }
+
+    const transactions: SleeperTransaction[] = bundle.transactions ?? [];
+
+    const snapshot: MbaLeagueSnapshot = {
       leagueId,
       leagueName: bundle.league.name || 'MBA',
       season: bundle.league.season || bundle.nbaState.season || '2026',
@@ -739,8 +892,11 @@ export class MbaLeagueEngine {
       starterSlotTemplate: MBA_STARTER_SLOTS,
       managers,
       rosters: hydratedRosters,
+      playerCatalog,
       tradedPicks: bundle.tradedPicks ?? [],
       draftPickAssets: pickMatrix.allPicks,
+      transactions,
+      historicalTrades: [],
       activeRosterId: activeRoster.rosterId,
       activeRoster,
       matchupLeverage: leverageByRosterId.get(activeRoster.rosterId) ?? null,
@@ -748,5 +904,13 @@ export class MbaLeagueEngine {
       stagedChecklist: activeRoster.stagedChecklist,
       syncedAt: new Date().toISOString(),
     };
+
+    snapshot.historicalTrades = evaluateHistoricalLeagueTrades({
+      transactions,
+      snapshot,
+      stateStore: this.stateStore,
+    });
+
+    return snapshot;
   }
 }
