@@ -11,6 +11,12 @@ import {
   resolveDraftPickMatrix,
 } from '../trades/dynasty-valuation';
 import {
+  decodeTradeProposalFromQueryParam,
+  encodeTradeProposalToQueryParam,
+  evaluateDynastyTrade,
+} from '../trades/trade-analyzer';
+import { parseFreeformTradeText } from '../trades/trade-text-parser';
+import {
   DEFAULT_MBA_SCORING_SETTINGS,
   DraftPickMatrix,
   HydratedRoster,
@@ -22,6 +28,7 @@ import {
   MatchupLeverageSummary,
   MbaLeagueSnapshot,
   MbaScoringSettings,
+  ParsedTradeTextResult,
   PlayerDynastyValuation,
   PlayerDynastyValuationInput,
   PlayerLockInEvaluation,
@@ -37,6 +44,8 @@ import {
   StageLineupPayload,
   StagedLineupChecklist,
   StarterSlotType,
+  TradeEvaluationResult,
+  TradeProposal,
 } from '../types/mba';
 
 const manualOverrideGameCountByStore = new WeakMap<ManagerStateStore, Map<string, number>>();
@@ -142,6 +151,72 @@ export class MbaLeagueEngine {
         pickMatrix,
       });
     });
+  }
+
+  /**
+   * Evaluates a 2-team or 3-team Dynasty Trade Proposal across both ADR-0002 axes:
+   * Adjusted Package Dynasty Value (with Consolidation Premium & Replacement Cut Assets)
+   * and Starting 10 Δ FP/G (pre-trade vs. post-trade optimal 10-starter lineup).
+   */
+  public evaluateTrade(proposal: TradeProposal, snapshot: MbaLeagueSnapshot): TradeEvaluationResult;
+  public evaluateTrade(proposal: TradeProposal): Promise<TradeEvaluationResult>;
+  public evaluateTrade(
+    proposal: TradeProposal,
+    snapshot?: MbaLeagueSnapshot
+  ): TradeEvaluationResult | Promise<TradeEvaluationResult> {
+    if (snapshot) {
+      return evaluateDynastyTrade({
+        proposal,
+        snapshot,
+        stateStore: this.stateStore,
+      });
+    }
+    return this.getLeagueSnapshot().then((snap) =>
+      evaluateDynastyTrade({
+        proposal,
+        snapshot: snap,
+        stateStore: this.stateStore,
+      })
+    );
+  }
+
+  /**
+   * Parses a freeform pasted trade description into a structured TradeProposal ready for evaluateTrade.
+   */
+  public parseTradeText(rawText: string, snapshot: MbaLeagueSnapshot): ParsedTradeTextResult;
+  public parseTradeText(rawText: string): Promise<ParsedTradeTextResult>;
+  public parseTradeText(
+    rawText: string,
+    snapshot?: MbaLeagueSnapshot
+  ): ParsedTradeTextResult | Promise<ParsedTradeTextResult> {
+    if (snapshot) {
+      return parseFreeformTradeText({
+        rawText,
+        snapshot,
+        stateStore: this.stateStore,
+      });
+    }
+    return this.getLeagueSnapshot().then((snap) =>
+      parseFreeformTradeText({
+        rawText,
+        snapshot: snap,
+        stateStore: this.stateStore,
+      })
+    );
+  }
+
+  /**
+   * Encodes a TradeProposal into a compact, shareable URL query parameter string.
+   */
+  public encodeTradeUrlParam(proposal: TradeProposal): string {
+    return encodeTradeProposalToQueryParam(proposal);
+  }
+
+  /**
+   * Decodes a TradeProposal from a shareable URL query parameter string.
+   */
+  public decodeTradeUrlParam(encoded: string | null | undefined): TradeProposal | null {
+    return decodeTradeProposalFromQueryParam(encoded);
   }
 
   /**

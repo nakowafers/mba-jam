@@ -532,3 +532,139 @@ export interface StagedLineupChecklist {
 export interface LineupMutationAdapter {
   stageLineupChanges(payload: StageLineupPayload): StagedLineupChecklist;
 }
+
+// Dynasty Trade Evaluation & Quick Trade Text Parser Types (ADR-0002 & GLOSSARY.md)
+
+export type TradeLetterGrade =
+  | 'A+'
+  | 'A'
+  | 'A-'
+  | 'B+'
+  | 'B'
+  | 'B-'
+  | 'C+'
+  | 'C'
+  | 'C-'
+  | 'D'
+  | 'F';
+
+export interface TradeParticipantProposal {
+  rosterId: number;
+  outgoingPlayerIds?: string[];
+  incomingPlayerIds?: string[];
+  outgoingPickIds?: string[];
+  incomingPickIds?: string[];
+}
+
+export interface TradeProposal {
+  participants: TradeParticipantProposal[];
+  pickTierOverrides?: Record<string, ProjectedPickTier>;
+}
+
+export interface ReplacementCutAsset {
+  playerId: string;
+  fullName: string;
+  positions: string[];
+  age: number | null;
+  fpg: number;
+  dynastyValue: number;
+  slotLabel: string;
+}
+
+export interface EvaluatedTradePlayerAsset {
+  playerId: string;
+  fullName: string;
+  nbaTeam: string;
+  positions: string[];
+  age: number | null;
+  fpg: number;
+  dynastyValue: number;
+  consolidationPremium: number;
+  fromRosterId: number;
+  toRosterId: number;
+}
+
+export interface EvaluatedTradePickAsset {
+  pickId: string;
+  season: DraftPickSeason;
+  round: 1 | 2;
+  originalRosterId: number;
+  originalRosterName: string;
+  displayLabel: string;
+  projectedSlot: number;
+  projectedTier: ProjectedPickTier;
+  hasManualTierOverride: boolean;
+  dynastyValue: number;
+  consolidationPremium: number;
+  fromRosterId: number;
+  toRosterId: number;
+}
+
+export interface OptimalStarterAssignmentSlot {
+  slotIndex: number;
+  slotLabel: StarterSlotType;
+  playerId: string;
+  fullName: string;
+  positions: string[];
+  fpg: number;
+}
+
+export interface TradeParticipantEvaluation {
+  rosterId: number;
+  rosterName: string;
+  managerDisplayName: string;
+  incomingPlayers: EvaluatedTradePlayerAsset[];
+  outgoingPlayers: EvaluatedTradePlayerAsset[];
+  incomingPicks: EvaluatedTradePickAsset[];
+  outgoingPicks: EvaluatedTradePickAsset[];
+  rawIncomingDynastyValue: number;
+  rawOutgoingDynastyValue: number;
+  rawDynastyDelta: number;
+  consolidationPremium: number;
+  outgoingConsolidationPremium: number;
+  replacementCutAssets: ReplacementCutAsset[];
+  replacementCutPenalty: number;
+  adjustedIncomingDynastyValue: number;
+  adjustedOutgoingDynastyValue: number;
+  adjustedDynastyDelta: number;
+  preTradeOptimalStarterFpg: number;
+  postTradeOptimalStarterFpg: number;
+  starting10DeltaFppg: number;
+  preTradeOptimalStarters: OptimalStarterAssignmentSlot[];
+  postTradeOptimalStarters: OptimalStarterAssignmentSlot[];
+  preTradeAverageAge: number;
+  postTradeAverageAge: number;
+  averageAgeDelta: number;
+  preTradeCenterCount: number;
+  postTradeCenterCount: number;
+  centerDepthDelta: number;
+  centerImpactSummary: string;
+  letterGrade: TradeLetterGrade;
+  compositeGradeScore: number;
+  isWinner: boolean;
+  takeaways: string[];
+}
+
+export type TradeFairnessLabel =
+  | 'Balanced Trade'
+  | 'Slight Edge'
+  | 'Lopsided Trade'
+  | 'Fleecing Alert';
+
+export interface TradeEvaluationResult {
+  participants: TradeParticipantEvaluation[];
+  fairnessScore: number;
+  fairnessLabel: TradeFairnessLabel;
+  winnerRosterId: number | null;
+  winnerRosterName: string | null;
+  netAdjustedSpread: number;
+  summaryHeadline: string;
+  appliedPickTierOverrides: Record<string, ProjectedPickTier>;
+}
+
+export interface ParsedTradeTextResult extends TradeProposal {
+  proposal: TradeProposal;
+  matchedRosters: Array<{ rosterId: number; rosterName: string; managerDisplayName: string }>;
+  unmatchedTokens: string[];
+}
+

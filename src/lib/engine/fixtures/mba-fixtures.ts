@@ -267,6 +267,25 @@ const REAL_MANAGERS = [
 export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
   const players: Record<string, SleeperPlayer> = { ...SEED_PLAYERS };
 
+  const NAMED_ROSTER_PLAYERS: Record<string, { first: string; last: string; team: string }> = {
+    r2_p1: { first: 'Trae', last: 'Young', team: 'ATL' },
+    r2_p7: { first: 'Bam', last: 'Adebayo', team: 'MIA' },
+    r3_p1: { first: 'Zion', last: 'Williamson', team: 'NOP' },
+    r4_p1: { first: 'Stephen', last: 'Curry', team: 'GSW' },
+    r4_p5: { first: 'Kevin', last: 'Durant', team: 'PHX' },
+    r4_p7: { first: 'Anthony', last: 'Davis', team: 'LAL' },
+    r5_p1: { first: 'Jalen', last: 'Brunson', team: 'NYK' },
+    r6_p1: { first: 'LaMelo', last: 'Ball', team: 'CHA' },
+    r6_p7: { first: 'Evan', last: 'Mobley', team: 'CLE' },
+    r7_p1: { first: 'Donovan', last: 'Mitchell', team: 'CLE' },
+    r8_p1: { first: 'Cade', last: 'Cunningham', team: 'DET' },
+    r8_p7: { first: 'Domantas', last: 'Sabonis', team: 'SAC' },
+    r9_p1: { first: 'Tyrese', last: 'Maxey', team: 'PHI' },
+    r10_p1: { first: 'Luka', last: 'Doncic', team: 'LAL' },
+    r10_p5: { first: 'Giannis', last: 'Antetokounmpo', team: 'MIL' },
+    r10_p7: { first: 'Karl-Anthony', last: 'Towns', team: 'NYK' },
+  };
+
   // Also generate deterministic players for rosters 2..10 so every roster has 10 starters, 3 bench, 2 reserve, 2 taxi
   for (let r = 2; r <= 10; r++) {
     const positions = ['PG', 'SG', 'PG', 'SF', 'PF', 'SF', 'C', 'C', 'SG', 'PF', 'PG', 'SF', 'C', 'SG', 'PF', 'PG', 'C'];
@@ -284,16 +303,21 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
               ? 25 + (idx % 6)
               : 22 + (idx % 8);
 
+      const named = NAMED_ROSTER_PLAYERS[pid];
+      const firstName = named ? named.first : 'Player';
+      const lastName = named ? named.last : `${r}-${idx + 1}`;
+      const fullName = named ? `${named.first} ${named.last}` : `Player ${r}-${idx + 1}`;
+
       players[pid] = {
         player_id: pid,
-        first_name: `Player`,
-        last_name: `${r}-${idx + 1}`,
-        full_name: `Player ${r}-${idx + 1}`,
+        first_name: firstName,
+        last_name: lastName,
+        full_name: fullName,
         age,
         years_exp: Math.max(1, age - 19),
         position: pos,
-        fantasy_positions: [pos],
-        team: 'NBA',
+        fantasy_positions: pid === 'r10_p5' ? ['PF', 'C'] : [pos],
+        team: named ? named.team : 'NBA',
         injury_status: idx === 13 || idx === 14 ? 'Out' : null,
       };
     });
@@ -402,17 +426,22 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
     // Roster #1 young stars (Wembanyama 1846, Banchero 1988, Sengun 1883, Flagg 4922),
     // Roster #4 & #8: high-scoring contenders; Roster #3 & #5: rebuilding scoring; Roster #6: high-upside young core
     const isRoster1Cornerstone = ['1846', '1988', '1883', '4922', '2301', '2580'].includes(pid);
+    const isBenchOrReserveSlot = rosterNum >= 2 && slotNum >= 11;
     const ptsBoost = isRoster1Cornerstone
       ? 50
-      : rosterNum === 4
-        ? 45
-        : rosterNum === 8
-          ? 30
-          : rosterNum === 6 && slotNum <= 6
-            ? 15
-            : rosterNum === 3 || rosterNum === 5
-              ? -35
-              : 0;
+      : pid === 'r10_p5'
+        ? 60
+        : isBenchOrReserveSlot
+          ? -85
+          : rosterNum === 4
+            ? 45
+            : rosterNum === 8
+              ? 30
+              : rosterNum === 6 && slotNum <= 6
+                ? 15
+                : rosterNum === 3 || rosterNum === 5
+                  ? -35
+                  : 0;
 
     return {
       player_id: pid,
@@ -424,14 +453,14 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
       team: players[pid].team,
       stats: {
         gp: 10,
-        pts: 220 + ptsBoost - (index % 7) * 10,
-        reb: 70 + (index % 5) * 10,
-        ast: 50 + (index % 4) * 10,
-        stl: 10,
-        blk: 8,
-        tpm: 18,
-        to: 20,
-        dd: 4,
+        pts: Math.max(60, 220 + ptsBoost - (index % 7) * 10),
+        reb: isBenchOrReserveSlot ? 40 + (index % 3) * 5 : 70 + (index % 5) * 10,
+        ast: isBenchOrReserveSlot ? 25 + (index % 3) * 5 : 50 + (index % 4) * 10,
+        stl: isBenchOrReserveSlot ? 6 : 10,
+        blk: isBenchOrReserveSlot ? 4 : 8,
+        tpm: isBenchOrReserveSlot ? 10 : 18,
+        to: isBenchOrReserveSlot ? 12 : 20,
+        dd: isBenchOrReserveSlot ? 1 : 4,
         td: 0,
       },
     };
