@@ -514,6 +514,161 @@ export class MbaLeagueEngine {
 
     const sortedRosters = [...bundle.rosters].sort((a, b) => a.roster_id - b.roster_id);
 
+    const buildHydratedPlayerSlot = (params: {
+      playerId: string;
+      slotIndex: number;
+      slotLabel: StarterSlotType | 'BN' | 'IR' | 'TAXI';
+      category: RosterSlotCategory;
+      rosterId?: number;
+      playersPoints?: Record<string, number>;
+    }): RosterPlayerSlot => {
+      const { playerId, slotIndex, slotLabel, category, rosterId, playersPoints } = params;
+      const pInfo: SleeperPlayer | undefined = bundle.players[playerId];
+      const seasonEntry = seasonStatByPlayerId.get(playerId);
+      const fallbackPlayer = seasonEntry?.player;
+
+      const firstName = pInfo?.first_name ?? fallbackPlayer?.first_name ?? 'Unknown';
+      const lastName = pInfo?.last_name ?? fallbackPlayer?.last_name ?? playerId;
+      const fullName = pInfo?.full_name ?? `${firstName} ${lastName}`.trim();
+      const nbaTeam = pInfo?.team ?? fallbackPlayer?.team ?? seasonEntry?.team ?? 'FA';
+      const positions =
+        pInfo?.fantasy_positions?.length
+          ? pInfo.fantasy_positions
+          : fallbackPlayer?.fantasy_positions?.length
+            ? fallbackPlayer.fantasy_positions
+            : pInfo?.position
+              ? [pInfo.position]
+              : ['UTIL'];
+
+      const injuryStatus = pInfo?.injury_status ?? fallbackPlayer?.injury_status ?? null;
+      const injuryNotes = pInfo?.injury_notes ?? fallbackPlayer?.injury_notes ?? null;
+      const age = pInfo?.age ?? null;
+      const yearsExp = pInfo?.years_exp ?? fallbackPlayer?.years_exp ?? null;
+
+      const seasonMetrics = computeSeasonMetrics(seasonEntry?.stats, scoringSettings);
+      const completedEntries = weeklyCompletedByPlayerId.get(playerId) ?? [];
+      const projectionEntries = weeklyProjByPlayerId.get(playerId) ?? [];
+
+      const currentWeekMatchupPoints =
+        playersPoints && typeof playersPoints[playerId] === 'number'
+          ? Math.round(playersPoints[playerId] * 100) / 100
+          : 0;
+
+      // Reconcile manual Lock-In override if a subsequent game in Sleeper has completed
+      let manualLockOverride: boolean | null = null;
+      const overrideKey =
+        rosterId !== undefined
+          ? `${leagueId}:${currentWeek}:${rosterId}:${playerId}`
+          : null;
+
+      if (rosterId !== undefined && overrideKey !== null) {
+        manualLockOverride = this.stateStore.getManualLockOverride(
+          leagueId,
+          currentWeek,
+          rosterId,
+          playerId
+        );
+
+        if (manualLockOverride !== null) {
+          const recordedCount = countMap.get(overrideKey);
+          if (recordedCount !== undefined && completedEntries.length > recordedCount) {
+            this.stateStore.setManualLockOverride(
+              leagueId,
+              currentWeek,
+              rosterId,
+              playerId,
+              null
+            );
+            countMap.delete(overrideKey);
+            manualLockOverride = null;
+          } else if (recordedCount === undefined) {
+            countMap.set(overrideKey, completedEntries.length);
+          }
+        }
+      }
+
+      const lockIn = evaluatePlayerLockIn({
+        category,
+        currentWeekMatchupPoints,
+        seasonFpg: seasonMetrics.mbaFantasyPointsPerGame,
+        completedEntries,
+        projectionEntries,
+        scoringSettings,
+        manualLockOverride,
+      });
+
+      // If Sleeper has inferred a lock or completed the final game of the week, clear any stale manual override
+      if (
+        rosterId !== undefined &&
+        overrideKey !== null &&
+        manualLockOverride !== null &&
+        (lockIn.lockSource === 'INFERRED_SLEEPER' || lockIn.lockSource === 'FINAL_GAME_AUTO')
+      ) {
+        this.stateStore.setManualLockOverride(
+          leagueId,
+          currentWeek,
+          rosterId,
+          playerId,
+          null
+        );
+        countMap.delete(overrideKey);
+      }
+
+      const latestCompletedGame = lockIn.completedGames.at(-1) ?? null;
+
+      const projectedFpg =
+        projectionEntries.length > 0
+          ? projectionEntries.reduce(
+              (sum, p) => sum + computeMbaPoints(p.stats, scoringSettings),
+              0
+            ) / projectionEntries.length
+          : null;
+
+      const { dynastyValue } = computePlayerDynastyValue({
+        actualFpg: seasonMetrics.mbaFantasyPointsPerGame,
+        gamesPlayed: seasonMetrics.gamesPlayed,
+        projectedFpg,
+        age,
+        positions,
+      });
+
+      return {
+        slotIndex,
+        slotLabel,
+        category,
+        playerId,
+        fullName,
+        firstName,
+        lastName,
+        nbaTeam,
+        positions,
+        injuryStatus,
+        injuryNotes,
+        age,
+        yearsExp,
+        seasonMetrics,
+        currentWeekMatchupPoints:
+          lockIn.lockSource === 'MANUAL_OVERRIDE' && lockIn.lockedScore !== null
+            ? lockIn.lockedScore
+            : currentWeekMatchupPoints,
+        currentWeekCompletedGamesCount: lockIn.completedGames.length,
+        currentWeekRemainingGamesCount: lockIn.remainingGames.length,
+        latestCompletedGamePoints: latestCompletedGame ? latestCompletedGame.mbaPoints : null,
+        completedGames: lockIn.completedGames,
+        remainingGames: lockIn.remainingGames,
+        isLocked: lockIn.isLocked,
+        isPinnedStarter: lockIn.isPinnedStarter,
+        lockedScore: lockIn.lockedScore,
+        isLockInWindowOpen: lockIn.isLockInWindowOpen,
+        lockInThreshold: lockIn.lockInThreshold,
+        effectiveWeeklyScore: lockIn.effectiveWeeklyScore,
+        recommendation: lockIn.recommendation,
+        leverageAnnotation: lockIn.leverageAnnotation,
+        lockIn,
+        dynastyValue,
+      };
+    };
+
     const managers: Manager[] = [];
     const hydratedRosters: HydratedRoster[] = [];
 
@@ -551,143 +706,15 @@ export class MbaLeagueEngine {
         slotIndex: number,
         slotLabel: StarterSlotType | 'BN' | 'IR' | 'TAXI',
         category: RosterSlotCategory
-      ): RosterPlayerSlot => {
-        const pInfo: SleeperPlayer | undefined = bundle.players[playerId];
-        const seasonEntry = seasonStatByPlayerId.get(playerId);
-        const fallbackPlayer = seasonEntry?.player;
-
-        const firstName = pInfo?.first_name ?? fallbackPlayer?.first_name ?? 'Unknown';
-        const lastName = pInfo?.last_name ?? fallbackPlayer?.last_name ?? playerId;
-        const fullName = pInfo?.full_name ?? `${firstName} ${lastName}`.trim();
-        const nbaTeam = pInfo?.team ?? fallbackPlayer?.team ?? seasonEntry?.team ?? 'FA';
-        const positions =
-          pInfo?.fantasy_positions?.length
-            ? pInfo.fantasy_positions
-            : fallbackPlayer?.fantasy_positions?.length
-              ? fallbackPlayer.fantasy_positions
-              : pInfo?.position
-                ? [pInfo.position]
-                : ['UTIL'];
-
-        const injuryStatus = pInfo?.injury_status ?? fallbackPlayer?.injury_status ?? null;
-        const injuryNotes = pInfo?.injury_notes ?? fallbackPlayer?.injury_notes ?? null;
-        const age = pInfo?.age ?? null;
-        const yearsExp = pInfo?.years_exp ?? fallbackPlayer?.years_exp ?? null;
-
-        const seasonMetrics = computeSeasonMetrics(seasonEntry?.stats, scoringSettings);
-        const completedEntries = weeklyCompletedByPlayerId.get(playerId) ?? [];
-        const projectionEntries = weeklyProjByPlayerId.get(playerId) ?? [];
-
-        const currentWeekMatchupPoints =
-          typeof playersPoints[playerId] === 'number'
-            ? Math.round(playersPoints[playerId] * 100) / 100
-            : 0;
-
-        // Reconcile manual Lock-In override if a subsequent game in Sleeper has completed
-        const overrideKey = `${leagueId}:${currentWeek}:${rawRoster.roster_id}:${playerId}`;
-        let manualLockOverride = this.stateStore.getManualLockOverride(
-          leagueId,
-          currentWeek,
-          rawRoster.roster_id,
-          playerId
-        );
-
-        if (manualLockOverride !== null) {
-          const recordedCount = countMap.get(overrideKey);
-          if (recordedCount !== undefined && completedEntries.length > recordedCount) {
-            this.stateStore.setManualLockOverride(
-              leagueId,
-              currentWeek,
-              rawRoster.roster_id,
-              playerId,
-              null
-            );
-            countMap.delete(overrideKey);
-            manualLockOverride = null;
-          } else if (recordedCount === undefined) {
-            countMap.set(overrideKey, completedEntries.length);
-          }
-        }
-
-        const lockIn = evaluatePlayerLockIn({
-          category,
-          currentWeekMatchupPoints,
-          seasonFpg: seasonMetrics.mbaFantasyPointsPerGame,
-          completedEntries,
-          projectionEntries,
-          scoringSettings,
-          manualLockOverride,
-        });
-
-        // If Sleeper has inferred a lock or completed the final game of the week, clear any stale manual override
-        if (
-          manualLockOverride !== null &&
-          (lockIn.lockSource === 'INFERRED_SLEEPER' || lockIn.lockSource === 'FINAL_GAME_AUTO')
-        ) {
-          this.stateStore.setManualLockOverride(
-            leagueId,
-            currentWeek,
-            rawRoster.roster_id,
-            playerId,
-            null
-          );
-          countMap.delete(overrideKey);
-        }
-
-        const latestCompletedGame = lockIn.completedGames.at(-1) ?? null;
-
-        const projectedFpg =
-          seasonMetrics.gamesPlayed < 10 && projectionEntries.length > 0
-            ? projectionEntries.reduce(
-                (sum, p) => sum + computeMbaPoints(p.stats, scoringSettings),
-                0
-              ) / projectionEntries.length
-            : null;
-
-        const { dynastyValue } = computePlayerDynastyValue({
-          actualFpg: seasonMetrics.mbaFantasyPointsPerGame,
-          gamesPlayed: seasonMetrics.gamesPlayed,
-          projectedFpg,
-          age,
-          positions,
-        });
-
-        return {
+      ): RosterPlayerSlot =>
+        buildHydratedPlayerSlot({
+          playerId,
           slotIndex,
           slotLabel,
           category,
-          playerId,
-          fullName,
-          firstName,
-          lastName,
-          nbaTeam,
-          positions,
-          injuryStatus,
-          injuryNotes,
-          age,
-          yearsExp,
-          seasonMetrics,
-          currentWeekMatchupPoints:
-            lockIn.lockSource === 'MANUAL_OVERRIDE' && lockIn.lockedScore !== null
-              ? lockIn.lockedScore
-              : currentWeekMatchupPoints,
-          currentWeekCompletedGamesCount: lockIn.completedGames.length,
-          currentWeekRemainingGamesCount: lockIn.remainingGames.length,
-          latestCompletedGamePoints: latestCompletedGame ? latestCompletedGame.mbaPoints : null,
-          completedGames: lockIn.completedGames,
-          remainingGames: lockIn.remainingGames,
-          isLocked: lockIn.isLocked,
-          isPinnedStarter: lockIn.isPinnedStarter,
-          lockedScore: lockIn.lockedScore,
-          isLockInWindowOpen: lockIn.isLockInWindowOpen,
-          lockInThreshold: lockIn.lockInThreshold,
-          effectiveWeeklyScore: lockIn.effectiveWeeklyScore,
-          recommendation: lockIn.recommendation,
-          leverageAnnotation: lockIn.leverageAnnotation,
-          lockIn,
-          dynastyValue,
-        };
-      };
+          rosterId: rawRoster.roster_id,
+          playersPoints,
+        });
 
       const starterSlots: RosterPlayerSlot[] = MBA_STARTER_SLOTS.map((slotType, idx) => {
         const pid = startersIds[idx] ?? '0';
@@ -811,73 +838,14 @@ export class MbaLeagueEngine {
         playerCatalog[p.playerId] = p;
       }
     }
-    for (const [pid, pInfo] of Object.entries(bundle.players ?? {})) {
+    for (const pid of Object.keys(bundle.players ?? {})) {
       if (playerCatalog[pid]) continue;
-      const seasonEntry = seasonStatByPlayerId.get(pid);
-      const fallbackPlayer = seasonEntry?.player;
-      const firstName = pInfo?.first_name ?? fallbackPlayer?.first_name ?? 'Unknown';
-      const lastName = pInfo?.last_name ?? fallbackPlayer?.last_name ?? pid;
-      const fullName = pInfo?.full_name ?? `${firstName} ${lastName}`.trim();
-      const nbaTeam = pInfo?.team ?? fallbackPlayer?.team ?? seasonEntry?.team ?? 'FA';
-      const positions =
-        pInfo?.fantasy_positions?.length
-          ? pInfo.fantasy_positions
-          : fallbackPlayer?.fantasy_positions?.length
-            ? fallbackPlayer.fantasy_positions
-            : pInfo?.position
-              ? [pInfo.position]
-              : ['UTIL'];
-      const age = pInfo?.age ?? null;
-      const yearsExp = pInfo?.years_exp ?? fallbackPlayer?.years_exp ?? null;
-      const seasonMetrics = computeSeasonMetrics(seasonEntry?.stats, scoringSettings);
-      const { dynastyValue } = computePlayerDynastyValue({
-        actualFpg: seasonMetrics.mbaFantasyPointsPerGame,
-        gamesPlayed: seasonMetrics.gamesPlayed,
-        projectedFpg: null,
-        age,
-        positions,
-      });
-      const lockIn = evaluatePlayerLockIn({
-        category: 'BENCH',
-        currentWeekMatchupPoints: 0,
-        seasonFpg: seasonMetrics.mbaFantasyPointsPerGame,
-        completedEntries: [],
-        projectionEntries: [],
-        scoringSettings,
-        manualLockOverride: null,
-      });
-      playerCatalog[pid] = {
+      playerCatalog[pid] = buildHydratedPlayerSlot({
+        playerId: pid,
         slotIndex: 0,
         slotLabel: 'BN',
         category: 'BENCH',
-        playerId: pid,
-        fullName,
-        firstName,
-        lastName,
-        nbaTeam,
-        positions,
-        injuryStatus: pInfo?.injury_status ?? null,
-        injuryNotes: pInfo?.injury_notes ?? null,
-        age,
-        yearsExp,
-        seasonMetrics,
-        currentWeekMatchupPoints: 0,
-        currentWeekCompletedGamesCount: 0,
-        currentWeekRemainingGamesCount: 0,
-        latestCompletedGamePoints: null,
-        completedGames: [],
-        remainingGames: [],
-        isLocked: false,
-        isPinnedStarter: false,
-        lockedScore: null,
-        isLockInWindowOpen: false,
-        lockInThreshold: lockIn.lockInThreshold,
-        effectiveWeeklyScore: lockIn.effectiveWeeklyScore,
-        recommendation: lockIn.recommendation,
-        leverageAnnotation: null,
-        lockIn,
-        dynastyValue,
-      };
+      });
     }
 
     const transactions: SleeperTransaction[] = bundle.transactions ?? [];

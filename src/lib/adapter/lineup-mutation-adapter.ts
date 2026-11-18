@@ -5,6 +5,8 @@ import {
 } from '../types/mba';
 
 export class ChecklistLineupAdapter implements LineupMutationAdapter {
+  public readonly mode = 'CHECKLIST' as const;
+
   stageLineupChanges(payload: StageLineupPayload): StagedLineupChecklist {
     const steps: StagedLineupChecklist['steps'] = [];
 
@@ -48,6 +50,50 @@ export class ChecklistLineupAdapter implements LineupMutationAdapter {
       sleeperDeepLink: `https://sleeper.com/leagues/${payload.leagueId}/team`,
       steps,
     };
+  }
+}
+
+export interface SleeperGraphQLWriteConfig {
+  authToken?: string;
+  endpoint?: string;
+}
+
+export class SleeperGraphQLNotConfiguredError extends Error {
+  public readonly code = 'NOT_CONFIGURED' as const;
+  public readonly mode = 'SLEEPER_GRAPHQL' as const;
+
+  constructor(
+    message = 'SleeperGraphQLWriteAdapter requires Sleeper GraphQL credentials (authToken) for v2 direct lineup/lock mutations.'
+  ) {
+    super(message);
+    this.name = 'SleeperGraphQLNotConfiguredError';
+  }
+}
+
+/**
+ * v2 scaffold implementing LineupMutationAdapter for direct Sleeper GraphQL write mutations.
+ * In v1, Sleeper's public REST API is read-only and ChecklistLineupAdapter is used by default;
+ * calling this adapter without credentials throws SleeperGraphQLNotConfiguredError ('NOT_CONFIGURED').
+ */
+export class SleeperGraphQLWriteAdapter implements LineupMutationAdapter {
+  public readonly mode = 'SLEEPER_GRAPHQL' as const;
+  private readonly config: SleeperGraphQLWriteConfig;
+
+  constructor(config: SleeperGraphQLWriteConfig = {}) {
+    this.config = config;
+  }
+
+  public isConfigured(): boolean {
+    return Boolean(this.config.authToken && this.config.authToken.trim().length > 0);
+  }
+
+  stageLineupChanges(_payload: StageLineupPayload): StagedLineupChecklist {
+    if (!this.isConfigured()) {
+      throw new SleeperGraphQLNotConfiguredError();
+    }
+    throw new SleeperGraphQLNotConfiguredError(
+      'Direct Sleeper GraphQL lineup push is scaffolded for v2 and not yet enabled; use ChecklistLineupAdapter in v1.'
+    );
   }
 }
 

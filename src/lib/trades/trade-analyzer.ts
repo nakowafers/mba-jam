@@ -1,3 +1,4 @@
+import { isPlayerEligibleForStarterSlot } from '@/lib/lineup/slot-optimizer';
 import { computeDraftPickDynastyValue, resolveDraftPickMatrix } from './dynasty-valuation';
 import {
   DraftPickAsset,
@@ -18,28 +19,6 @@ import {
   TradeParticipantEvaluation,
   TradeProposal,
 } from '../types/mba';
-
-/**
- * Checks whether a player with the given positions can legally occupy a specific MBA Starter Slot.
- */
-export function isPlayerEligibleForStarterSlot(
-  positions: readonly string[],
-  slotType: StarterSlotType
-): boolean {
-  if (slotType === 'UTIL') return true;
-  if (slotType === 'PG') return positions.includes('PG');
-  if (slotType === 'SG') return positions.includes('SG');
-  if (slotType === 'G') {
-    return positions.includes('PG') || positions.includes('SG') || positions.includes('G');
-  }
-  if (slotType === 'SF') return positions.includes('SF');
-  if (slotType === 'PF') return positions.includes('PF');
-  if (slotType === 'F') {
-    return positions.includes('SF') || positions.includes('PF') || positions.includes('F');
-  }
-  if (slotType === 'C') return positions.includes('C');
-  return true;
-}
 
 /**
  * Solves the exact maximum-weight 10-starter lineup across ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'C', 'UTIL', 'UTIL']
@@ -205,7 +184,7 @@ export function getTradeLetterGrade(compositeScore: number): TradeLetterGrade {
   return 'F';
 }
 
-interface NormalizedParticipantAssets {
+export interface NormalizedParticipantAssets {
   rosterId: number;
   incomingPlayerIds: string[];
   outgoingPlayerIds: string[];
@@ -222,10 +201,10 @@ function uniqueStrings(arr: readonly string[] | undefined): string[] {
  * Normalizes a 2-team or 3-team TradeProposal so that both incoming and outgoing player/pick lists
  * are populated consistently for every participating Roster.
  */
-function normalizeTradeParticipants(
+export function normalizeTradeParticipants(
   proposal: TradeProposal,
-  rosterById: Map<number, HydratedRoster>,
-  pickById: Map<string, DraftPickAsset>
+  rosterById: Map<number, HydratedRoster> = new Map(),
+  pickById: Map<string, DraftPickAsset> = new Map()
 ): NormalizedParticipantAssets[] {
   const rawParticipants = proposal.participants.slice(0, 3);
   const normalized: NormalizedParticipantAssets[] = rawParticipants.map((p) => ({
@@ -453,8 +432,6 @@ export function evaluateDynastyTrade(params: {
           originalRosterName: origRosterName,
           currentOwnerRosterId: origRosterId,
           currentOwnerRosterName: origRosterName,
-          ownerRosterId: origRosterId,
-          ownerRosterName: origRosterName,
           isTraded: true,
           viaAnnotation: `via Roster #${origRosterId} (${origRosterName})`,
           displayLabel: `${match[1]} ${roundOrdinal} via Roster #${origRosterId}`,
@@ -597,30 +574,14 @@ export function evaluateDynastyTrade(params: {
     const replacementCutPenalty =
       Math.round(replacementCutAssets.reduce((sum, c) => sum + c.dynastyValue, 0) * 10) / 10;
 
-    // When a Roster consolidates N outgoing players into M < N incoming players,
-    // it frees up (N - M) roster slots worth replacement bench baseline value,
-    // so its outgoing multi-player package is discounted by the replacement slot cost of those extra spots.
-    const freedPlayerSlots = Math.max(0, outgoingPlayers.length - incomingPlayers.length);
-    const replacementBenchBaseline =
-      eligibleBenchCuts.length > 0
-        ? eligibleBenchCuts[0].dynastyValue
-        : 32.0;
-    const freedSlotReplacementCredit =
-      freedPlayerSlots > 0
-        ? Math.round(freedPlayerSlots * replacementBenchBaseline * 10) / 10
-        : 0;
-
+    // Single-sided Replacement Cut Asset accounting (ADR-0002):
+    // Deduct Replacement Cut Asset penalty only on the side absorbing excess incoming players.
     const adjustedIncomingDynastyValue =
       Math.round(
         (rawIncomingDynastyValue + consolidationPremium - replacementCutPenalty) * 10
       ) / 10;
     const adjustedOutgoingDynastyValue =
-      Math.round(
-        Math.max(
-          0,
-          rawOutgoingDynastyValue + outgoingConsolidationPremium - freedSlotReplacementCredit
-        ) * 10
-      ) / 10;
+      Math.round((rawOutgoingDynastyValue + outgoingConsolidationPremium) * 10) / 10;
     const adjustedDynastyDelta =
       Math.round((adjustedIncomingDynastyValue - adjustedOutgoingDynastyValue) * 10) / 10;
 

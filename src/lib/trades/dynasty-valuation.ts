@@ -284,8 +284,6 @@ export function resolveDraftPickMatrix(params: {
           originalRosterName: originalRoster.manager.rosterName,
           currentOwnerRosterId,
           currentOwnerRosterName: ownerRoster.manager.rosterName,
-          ownerRosterId: currentOwnerRosterId,
-          ownerRosterName: ownerRoster.manager.rosterName,
           isTraded,
           viaAnnotation,
           displayLabel,

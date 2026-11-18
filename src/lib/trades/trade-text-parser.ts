@@ -1,4 +1,5 @@
 import { resolveDraftPickMatrix } from './dynasty-valuation';
+import { normalizeTradeParticipants } from './trade-analyzer';
 import {
   DraftPickAsset,
   DraftPickSeason,
@@ -379,41 +380,24 @@ export function parseFreeformTradeText(params: {
     ensureParticipant(secondId);
   }
 
-  const participants = [...participantMap.values()].slice(0, 3);
-
-  // Cross-populate incoming/outgoing for 2-team proposals so the returned proposal is immediately complete
-  if (participants.length === 2) {
-    const [a, b] = participants;
-    if ((a.outgoingPlayerIds?.length ?? 0) === 0 && (b.incomingPlayerIds?.length ?? 0) > 0) {
-      a.outgoingPlayerIds = [...b.incomingPlayerIds!];
-    }
-    if ((b.outgoingPlayerIds?.length ?? 0) === 0 && (a.incomingPlayerIds?.length ?? 0) > 0) {
-      b.outgoingPlayerIds = [...a.incomingPlayerIds!];
-    }
-    if ((a.incomingPlayerIds?.length ?? 0) === 0 && (b.outgoingPlayerIds?.length ?? 0) > 0) {
-      a.incomingPlayerIds = [...b.outgoingPlayerIds!];
-    }
-    if ((b.incomingPlayerIds?.length ?? 0) === 0 && (a.outgoingPlayerIds?.length ?? 0) > 0) {
-      b.incomingPlayerIds = [...a.outgoingPlayerIds!];
-    }
-
-    if ((a.outgoingPickIds?.length ?? 0) === 0 && (b.incomingPickIds?.length ?? 0) > 0) {
-      a.outgoingPickIds = [...b.incomingPickIds!];
-    }
-    if ((b.outgoingPickIds?.length ?? 0) === 0 && (a.incomingPickIds?.length ?? 0) > 0) {
-      b.outgoingPickIds = [...a.incomingPickIds!];
-    }
-    if ((a.incomingPickIds?.length ?? 0) === 0 && (b.outgoingPickIds?.length ?? 0) > 0) {
-      a.incomingPickIds = [...b.outgoingPickIds!];
-    }
-    if ((b.incomingPickIds?.length ?? 0) === 0 && (a.outgoingPickIds?.length ?? 0) > 0) {
-      b.incomingPickIds = [...a.outgoingPickIds!];
-    }
-  }
-
   const rosterById = new Map<number, HydratedRoster>(
     snapshot.rosters.map((r) => [r.rosterId, r])
   );
+  const pickById = new Map<string, DraftPickAsset>(
+    pickMatrix.allPicks.map((p) => [p.id, p])
+  );
+
+  // Cross-populate incoming/outgoing for 2-team/3-team proposals so the returned proposal is immediately complete
+  const participants = normalizeTradeParticipants(
+    {
+      participants: [...participantMap.values()].slice(0, 3),
+      pickTierOverrides:
+        Object.keys(pickTierOverrides).length > 0 ? pickTierOverrides : undefined,
+    },
+    rosterById,
+    pickById
+  );
+
   const matchedRosters = participants.map((p) => {
     const r = rosterById.get(p.rosterId);
     return {

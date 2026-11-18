@@ -181,7 +181,7 @@ export function LeaguePowerRankingsView() {
                   MBA Power Rankings & 2026–2029 Draft Pick Matrix
                 </h1>
                 <span className="rounded-md bg-orange-500/15 px-2 py-0.5 font-mono text-xs font-bold text-orange-300 ring-1 ring-orange-500/30">
-                  80 Future Picks Resolved
+                  80 Draft Pick Assets Resolved
                 </span>
               </div>
               <p className="mt-1 text-xs text-slate-400">

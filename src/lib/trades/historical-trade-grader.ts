@@ -1,6 +1,7 @@
 import { evaluateDynastyTrade } from './trade-analyzer';
 import {
   FlippedAssetChainRecord,
+  FlippedAssetMetadata,
   GradedHistoricalTrade,
   HistoricalTradeFilterOptions,
   MBA_LEAGUE_ID_2025,
@@ -11,6 +12,40 @@ import {
   TradeParticipantProposal,
   TradeProposal,
 } from '../types/mba';
+
+interface SubsequentFlipMatch {
+  trade: GradedHistoricalTrade;
+  toRosterId: number;
+  toRosterName: string;
+}
+
+function applyFlippedAssetMetadata(
+  asset: FlippedAssetMetadata,
+  match: SubsequentFlipMatch | null
+): string | null {
+  if (match) {
+    const summary = `Flipped to Roster #${match.toRosterId} (${match.toRosterName}) in ${match.trade.season} Wk ${match.trade.leg}`;
+    asset.isFlippedAsset = true;
+    asset.flippedInTransactionId = match.trade.transactionId;
+    asset.flippedTimestamp = match.trade.created;
+    asset.flippedToRosterId = match.toRosterId;
+    asset.flippedToRosterName = match.toRosterName;
+    asset.flippedSeason = match.trade.season;
+    asset.flippedLeg = match.trade.leg;
+    asset.flippedSummary = summary;
+    return summary;
+  }
+
+  asset.isFlippedAsset = false;
+  asset.flippedInTransactionId = null;
+  asset.flippedTimestamp = null;
+  asset.flippedToRosterId = null;
+  asset.flippedToRosterName = null;
+  asset.flippedSeason = null;
+  asset.flippedLeg = null;
+  asset.flippedSummary = null;
+  return null;
+}
 
 function inferSeasonFromTransaction(tx: SleeperTransaction): '2026' | '2025' | string {
   if (tx.season) return tx.season;
@@ -185,11 +220,7 @@ export function evaluateHistoricalLeagueTrades(params: {
 
       // Check incoming players acquired by acquiringRosterId
       for (const playerAsset of part.incomingPlayers) {
-        let subsequentMatch: {
-          trade: GradedHistoricalTrade;
-          toRosterId: number;
-          toRosterName: string;
-        } | null = null;
+        let subsequentMatch: SubsequentFlipMatch | null = null;
 
         for (let j = i + 1; j < gradedChronological.length; j++) {
           const laterTrade = gradedChronological[j];
@@ -220,17 +251,8 @@ export function evaluateHistoricalLeagueTrades(params: {
           }
         }
 
-        if (subsequentMatch) {
-          const summary = `Flipped to Roster #${subsequentMatch.toRosterId} (${subsequentMatch.toRosterName}) in ${subsequentMatch.trade.season} Wk ${subsequentMatch.trade.leg}`;
-          playerAsset.isFlippedAsset = true;
-          playerAsset.flippedInTransactionId = subsequentMatch.trade.transactionId;
-          playerAsset.flippedTimestamp = subsequentMatch.trade.created;
-          playerAsset.flippedToRosterId = subsequentMatch.toRosterId;
-          playerAsset.flippedToRosterName = subsequentMatch.toRosterName;
-          playerAsset.flippedSeason = subsequentMatch.trade.season;
-          playerAsset.flippedLeg = subsequentMatch.trade.leg;
-          playerAsset.flippedSummary = summary;
-
+        const summary = applyFlippedAssetMetadata(playerAsset, subsequentMatch);
+        if (subsequentMatch && summary) {
           flippedRecords.push({
             assetType: 'PLAYER',
             assetId: playerAsset.playerId,
@@ -248,25 +270,12 @@ export function evaluateHistoricalLeagueTrades(params: {
             flippedLeg: subsequentMatch.trade.leg,
             flippedSummary: summary,
           });
-        } else {
-          playerAsset.isFlippedAsset = false;
-          playerAsset.flippedInTransactionId = null;
-          playerAsset.flippedTimestamp = null;
-          playerAsset.flippedToRosterId = null;
-          playerAsset.flippedToRosterName = null;
-          playerAsset.flippedSeason = null;
-          playerAsset.flippedLeg = null;
-          playerAsset.flippedSummary = null;
         }
       }
 
       // Check incoming Draft Pick Assets acquired by acquiringRosterId
       for (const pickAsset of part.incomingPicks) {
-        let subsequentMatch: {
-          trade: GradedHistoricalTrade;
-          toRosterId: number;
-          toRosterName: string;
-        } | null = null;
+        let subsequentMatch: SubsequentFlipMatch | null = null;
 
         for (let j = i + 1; j < gradedChronological.length; j++) {
           const laterTrade = gradedChronological[j];
@@ -313,17 +322,8 @@ export function evaluateHistoricalLeagueTrades(params: {
           }
         }
 
-        if (subsequentMatch) {
-          const summary = `Flipped to Roster #${subsequentMatch.toRosterId} (${subsequentMatch.toRosterName}) in ${subsequentMatch.trade.season} Wk ${subsequentMatch.trade.leg}`;
-          pickAsset.isFlippedAsset = true;
-          pickAsset.flippedInTransactionId = subsequentMatch.trade.transactionId;
-          pickAsset.flippedTimestamp = subsequentMatch.trade.created;
-          pickAsset.flippedToRosterId = subsequentMatch.toRosterId;
-          pickAsset.flippedToRosterName = subsequentMatch.toRosterName;
-          pickAsset.flippedSeason = subsequentMatch.trade.season;
-          pickAsset.flippedLeg = subsequentMatch.trade.leg;
-          pickAsset.flippedSummary = summary;
-
+        const summary = applyFlippedAssetMetadata(pickAsset, subsequentMatch);
+        if (subsequentMatch && summary) {
           flippedRecords.push({
             assetType: 'PICK',
             assetId: pickAsset.pickId,
@@ -341,15 +341,6 @@ export function evaluateHistoricalLeagueTrades(params: {
             flippedLeg: subsequentMatch.trade.leg,
             flippedSummary: summary,
           });
-        } else {
-          pickAsset.isFlippedAsset = false;
-          pickAsset.flippedInTransactionId = null;
-          pickAsset.flippedTimestamp = null;
-          pickAsset.flippedToRosterId = null;
-          pickAsset.flippedToRosterName = null;
-          pickAsset.flippedSeason = null;
-          pickAsset.flippedLeg = null;
-          pickAsset.flippedSummary = null;
         }
       }
     }
