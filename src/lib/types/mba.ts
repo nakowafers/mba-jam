@@ -142,6 +142,8 @@ export interface SleeperTransaction {
   adds: Record<string, number> | null;
   drops: Record<string, number> | null;
   draft_picks: SleeperTradedPick[];
+  season?: '2026' | '2025' | string;
+  league_id?: string;
 }
 
 export interface SleeperPlayer {
@@ -376,8 +378,11 @@ export interface MbaLeagueSnapshot {
   starterSlotTemplate: readonly StarterSlotType[];
   managers: Manager[];
   rosters: HydratedRoster[];
+  playerCatalog?: Record<string, RosterPlayerSlot>;
   tradedPicks: SleeperTradedPick[];
   draftPickAssets: DraftPickAsset[];
+  transactions: SleeperTransaction[];
+  historicalTrades: GradedHistoricalTrade[];
   activeRosterId: number;
   activeRoster: HydratedRoster;
   matchupLeverage: MatchupLeverageSummary | null;
@@ -473,6 +478,7 @@ export interface SleeperLeagueBundle {
   rosters: SleeperRoster[];
   matchups: SleeperMatchup[];
   tradedPicks: SleeperTradedPick[];
+  transactions?: SleeperTransaction[];
   players: Record<string, SleeperPlayer>;
   seasonStats: SleeperGameStatEntry[];
   weeklyStats: SleeperGameStatEntry[];
@@ -652,6 +658,14 @@ export interface EvaluatedTradePlayerAsset {
   consolidationPremium: number;
   fromRosterId: number;
   toRosterId: number;
+  isFlippedAsset?: boolean;
+  flippedInTransactionId?: string | null;
+  flippedTimestamp?: number | null;
+  flippedToRosterId?: number | null;
+  flippedToRosterName?: string | null;
+  flippedSeason?: string | null;
+  flippedLeg?: number | null;
+  flippedSummary?: string | null;
 }
 
 export interface EvaluatedTradePickAsset {
@@ -668,6 +682,14 @@ export interface EvaluatedTradePickAsset {
   consolidationPremium: number;
   fromRosterId: number;
   toRosterId: number;
+  isFlippedAsset?: boolean;
+  flippedInTransactionId?: string | null;
+  flippedTimestamp?: number | null;
+  flippedToRosterId?: number | null;
+  flippedToRosterName?: string | null;
+  flippedSeason?: string | null;
+  flippedLeg?: number | null;
+  flippedSummary?: string | null;
 }
 
 export interface OptimalStarterAssignmentSlot {
@@ -737,4 +759,51 @@ export interface ParsedTradeTextResult extends TradeProposal {
   matchedRosters: Array<{ rosterId: number; rosterName: string; managerDisplayName: string }>;
   unmatchedTokens: string[];
 }
+
+export type HistoricalTradeSeasonFilter = '2026' | '2025' | 'ALL';
+
+export interface HistoricalTradeFilterOptions {
+  season?: HistoricalTradeSeasonFilter;
+  rosterId?: number | null;
+}
+
+export interface FlippedAssetChainRecord {
+  assetType: 'PLAYER' | 'PICK';
+  assetId: string;
+  assetLabel: string;
+  acquiredByRosterId: number;
+  acquiredByRosterName: string;
+  acquiredInTransactionId: string;
+  acquiredTimestamp: number;
+  isFlippedAsset: true;
+  flippedInTransactionId: string;
+  flippedTimestamp: number;
+  flippedToRosterId: number;
+  flippedToRosterName: string;
+  flippedSeason: string;
+  flippedLeg: number;
+  flippedSummary: string;
+}
+
+export interface GradedHistoricalTrade {
+  transactionId: string;
+  leagueId: string;
+  season: '2026' | '2025' | string;
+  leg: number;
+  created: number;
+  formattedDate: string;
+  rosterIds: number[];
+  proposal: TradeProposal;
+  evaluation: TradeEvaluationResult;
+  participants: TradeParticipantEvaluation[];
+  winnerRosterId: number | null;
+  winnerRosterName: string | null;
+  fairnessScore: number;
+  fairnessLabel: TradeFairnessLabel;
+  netAdjustedSpread: number;
+  summaryHeadline: string;
+  flippedAssets: FlippedAssetChainRecord[];
+  hasFlippedAssets: boolean;
+}
+
 

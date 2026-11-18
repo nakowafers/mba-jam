@@ -1218,3 +1218,133 @@ describe('MbaLeagueEngine — Non-Linear Dynasty Trade Analyzer & Quick Trade Te
   });
 });
 
+describe('MbaLeagueEngine — Completed League Trade Grader (2026 & 2025 Seasons) & Flipped Asset Seam', () => {
+  it('aggregates and grades completed trades across both the 2026 (1344293979830640640) and 2025 (1212393765696700416) MBA seasons using the ADR-0002 dual-axis trade analyzer, while ignoring non-trade transactions', async () => {
+    const gateway = new InMemorySleeperGateway(createDeterministicMbaFixtures());
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const snapshot = await engine.getLeagueSnapshot();
+    const allTrades = await engine.gradeHistoricalTrades({ season: 'ALL' });
+
+    // Snapshot also exposes graded historical trades directly
+    expect(snapshot.historicalTrades).toBeDefined();
+    expect(snapshot.historicalTrades.length).toBe(allTrades.length);
+    expect(allTrades.length).toBeGreaterThanOrEqual(6);
+
+    // Includes completed trades from both 2026 (1344293979830640640) and 2025 (1212393765696700416)
+    const trades2026 = allTrades.filter((t) => t.season === '2026');
+    const trades2025 = allTrades.filter((t) => t.season === '2025');
+    expect(trades2026.length).toBeGreaterThanOrEqual(3);
+    expect(trades2025.length).toBeGreaterThanOrEqual(3);
+    expect(trades2026.every((t) => t.leagueId === '1344293979830640640')).toBe(true);
+    expect(trades2025.every((t) => t.leagueId === '1212393765696700416')).toBe(true);
+
+    // Sorted newest-first by created timestamp
+    for (let i = 1; i < allTrades.length; i++) {
+      expect(allTrades[i - 1].created).toBeGreaterThanOrEqual(allTrades[i].created);
+    }
+
+    // Every graded historical trade has a dual-axis evaluation with Letter Grades, Adjusted Dynasty Value, and Starting 10 Δ FP/G
+    for (const trade of allTrades) {
+      expect(trade.transactionId).toBeTruthy();
+      expect(trade.formattedDate).toBeTruthy();
+      expect(trade.participants.length).toBeGreaterThanOrEqual(2);
+      expect(trade.fairnessScore).toBeGreaterThanOrEqual(0);
+      expect(trade.fairnessScore).toBeLessThanOrEqual(100);
+      for (const part of trade.participants) {
+        expect(['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F']).toContain(
+          part.letterGrade
+        );
+        expect(typeof part.adjustedDynastyDelta).toBe('number');
+        expect(typeof part.starting10DeltaFppg).toBe('number');
+      }
+    }
+  });
+
+  it('detects single-hop and multi-hop Flipped Assets across 2025 and 2026 transactions when an acquired player or Draft Pick Asset is subsequently traded away by the acquiring Roster', async () => {
+    const gateway = new InMemorySleeperGateway(createDeterministicMbaFixtures());
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const allTrades = await engine.gradeHistoricalTrades({ season: 'ALL' });
+
+    const tx2025_1 = allTrades.find((t) => t.transactionId === 'tx_2025_1')!;
+    const tx2025_3 = allTrades.find((t) => t.transactionId === 'tx_2025_3')!;
+    const tx2026_1 = allTrades.find((t) => t.transactionId === 'tx_2026_1')!;
+
+    expect(tx2025_1).toBeDefined();
+    expect(tx2025_3).toBeDefined();
+    expect(tx2026_1).toBeDefined();
+
+    // Hop 1 (tx_2025_1): Roster #4 (Cobra Clutch) acquires player '1362' (Damian Lillard) and '2028-r1-orig-10' from Roster #10,
+    // and later trades both away to Roster #7 in tx_2025_3
+    const r4InTx1 = tx2025_1.participants.find((p) => p.rosterId === 4)!;
+    const lillardHop1 = r4InTx1.incomingPlayers.find((p) => p.playerId === '1362')!;
+    const pick2028Hop1 = r4InTx1.incomingPicks.find((pk) => pk.pickId === '2028-r1-orig-10')!;
+
+    expect(lillardHop1.isFlippedAsset).toBe(true);
+    expect(lillardHop1.flippedInTransactionId).toBe('tx_2025_3');
+    expect(lillardHop1.flippedToRosterId).toBe(7);
+    expect(lillardHop1.flippedTimestamp).toBe(tx2025_3.created);
+    expect(lillardHop1.flippedSummary).toContain('Golden State Hospice');
+
+    expect(pick2028Hop1.isFlippedAsset).toBe(true);
+    expect(pick2028Hop1.flippedInTransactionId).toBe('tx_2025_3');
+    expect(pick2028Hop1.flippedToRosterId).toBe(7);
+
+    // Hop 2 (tx_2025_3): Roster #7 (Golden State Hospice) acquires '1362' and '2028-r1-orig-10' from Roster #4,
+    // keeps '1362', and later flips '2028-r1-orig-10' to Roster #1 (Ashley ketchcum) in tx_2026_1 (2026 season!)
+    const r7InTx3 = tx2025_3.participants.find((p) => p.rosterId === 7)!;
+    const lillardHop2 = r7InTx3.incomingPlayers.find((p) => p.playerId === '1362')!;
+    const pick2028Hop2 = r7InTx3.incomingPicks.find((pk) => pk.pickId === '2028-r1-orig-10')!;
+
+    expect(lillardHop2.isFlippedAsset).toBe(false);
+    expect(lillardHop2.flippedInTransactionId).toBeNull();
+
+    expect(pick2028Hop2.isFlippedAsset).toBe(true);
+    expect(pick2028Hop2.flippedInTransactionId).toBe('tx_2026_1');
+    expect(pick2028Hop2.flippedToRosterId).toBe(1);
+    expect(pick2028Hop2.flippedTimestamp).toBe(tx2026_1.created);
+    expect(pick2028Hop2.flippedSummary).toContain('Ashley ketchcum');
+
+    // Hop 3 (tx_2026_1): Roster #1 acquires '2028-r1-orig-10' and holds it -> not flipped
+    const r1InTx2026_1 = tx2026_1.participants.find((p) => p.rosterId === 1)!;
+    const pick2028Hop3 = r1InTx2026_1.incomingPicks.find((pk) => pk.pickId === '2028-r1-orig-10')!;
+    expect(pick2028Hop3.isFlippedAsset).toBe(false);
+    expect(pick2028Hop3.flippedInTransactionId).toBeNull();
+  });
+
+  it('filters historical trades by season (2026, 2025, ALL) and by participating Manager / Roster while preserving cross-season Flipped Asset links', async () => {
+    const gateway = new InMemorySleeperGateway(createDeterministicMbaFixtures());
+    const stateStore = new InMemoryManagerStateStore();
+    const engine = new MbaLeagueEngine({ gateway, stateStore });
+
+    const snapshot = await engine.getLeagueSnapshot();
+
+    const only2026 = engine.gradeHistoricalTrades({ season: '2026' }, snapshot);
+    expect(only2026.length).toBe(3);
+    expect(only2026.every((t) => t.season === '2026')).toBe(true);
+
+    const only2025 = engine.gradeHistoricalTrades({ season: '2025' }, snapshot);
+    expect(only2025.length).toBe(3);
+    expect(only2025.every((t) => t.season === '2025')).toBe(true);
+
+    // Cross-season Flipped Asset link (tx_2025_3 -> tx_2026_1) is preserved even when filtering to '2025'
+    const tx2025_3 = only2025.find((t) => t.transactionId === 'tx_2025_3')!;
+    expect(tx2025_3.hasFlippedAssets).toBe(true);
+    expect(tx2025_3.flippedAssets[0].flippedInTransactionId).toBe('tx_2026_1');
+
+    // Filter by participating Roster #1 (Ashley ketchcum) across all seasons
+    const roster1Trades = engine.gradeHistoricalTrades({ season: 'ALL', rosterId: 1 }, snapshot);
+    expect(roster1Trades.length).toBe(2);
+    expect(roster1Trades.every((t) => t.rosterIds.includes(1))).toBe(true);
+
+    // Filter by participating Roster #4 (Cobra Clutch) in 2025 season
+    const roster4In2025 = await engine.gradeHistoricalTrades({ season: '2025', rosterId: 4 });
+    expect(roster4In2025.length).toBe(2);
+    expect(roster4In2025.every((t) => t.season === '2025' && t.rosterIds.includes(4))).toBe(true);
+  });
+});
+
+

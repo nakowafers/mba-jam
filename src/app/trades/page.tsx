@@ -1,15 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ArrowLeftRight, History, Sparkles } from 'lucide-react';
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
+import { CompletedTradeGrader } from '@/components/trades/completed-trade-grader';
 import { DynastyTradeBuilder } from '@/components/trades/dynasty-trade-builder';
+import { TradeProposal } from '@/lib/types/mba';
 
 export type TradeCenterTab = 'BUILDER' | 'COMPLETED_GRADER';
 
 export default function TradesPage() {
   const { snapshot } = useMbaLeague();
   const [activeTab, setActiveTab] = useState<TradeCenterTab>('BUILDER');
+  const [builderProposal, setBuilderProposal] = useState<TradeProposal | null>(null);
+
+  const handleLoadInBuilder = useCallback((proposal: TradeProposal) => {
+    setBuilderProposal(proposal);
+    setActiveTab('BUILDER');
+  }, []);
+
+  const handleProposalConsumed = useCallback(() => {
+    setBuilderProposal(null);
+  }, []);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
@@ -35,16 +47,16 @@ export default function TradesPage() {
                   {snapshot.activeRoster.manager.rosterName}
                 </span>{' '}
                 (@{snapshot.activeRoster.manager.displayName}) • Consolidation Premium • Replacement Cut
-                Assets • Starting 10 Δ FP/G
+                Assets • Starting 10 Δ FP/G • Flipped Asset Tracking
               </p>
             </div>
           </div>
 
-          {/* Clean Tab Header for Trade Builder & Completed League Trade Grader (2026 & 2025) */}
+          {/* Clean Tab Header for Trade Builder & MBA Trade History (Completed League Trade Grader) */}
           <div
             role="tablist"
             aria-label="Trade Center Sections"
-            className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950 p-1.5 text-xs"
+            className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-800 bg-slate-950 p-1.5 text-xs"
           >
             <button
               type="button"
@@ -75,28 +87,19 @@ export default function TradesPage() {
               }`}
             >
               <History className="h-3.5 w-3.5" />
-              <span>Completed League Trade Grader (2026 &amp; 2025)</span>
+              <span>MBA Trade History (2026 &amp; 2025 Grader)</span>
             </button>
           </div>
         </div>
       </section>
 
       {activeTab === 'BUILDER' ? (
-        <DynastyTradeBuilder />
+        <DynastyTradeBuilder
+          externalProposal={builderProposal}
+          onExternalProposalConsumed={handleProposalConsumed}
+        />
       ) : (
-        <section
-          data-testid="completed-trade-grader-placeholder"
-          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center"
-        >
-          <History className="mx-auto h-8 w-8 text-orange-400" />
-          <h2 className="mt-3 text-lg font-extrabold text-white">
-            Completed League Trade Grader (2026 &amp; 2025 Seasons)
-          </h2>
-          <p className="mt-1 text-xs text-slate-400">
-            Historical Sleeper transaction grader with Flipped Asset tracking across seasons 2026 (
-            1344293979830640640) and 2025 (1212393765696700416).
-          </p>
-        </section>
+        <CompletedTradeGrader onLoadInBuilder={handleLoadInBuilder} />
       )}
     </div>
   );

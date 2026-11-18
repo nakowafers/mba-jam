@@ -4,6 +4,7 @@ import {
   MBA_LEAGUE_ID_2026,
   SleeperLeagueBundle,
   SleeperPlayer,
+  SleeperTransaction,
 } from '../../types/mba';
 
 const SEED_PLAYERS: Record<string, SleeperPlayer> = {
@@ -322,6 +323,20 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
       };
     });
   }
+
+  // Historical traded player (Damian Lillard, '1362') appended after roster players to preserve deterministic indices
+  players['1362'] = {
+    player_id: '1362',
+    first_name: 'Damian',
+    last_name: 'Lillard',
+    full_name: 'Damian Lillard',
+    age: 34,
+    years_exp: 13,
+    position: 'PG',
+    fantasy_positions: ['PG'],
+    team: 'MIL',
+    injury_status: null,
+  };
 
   const users = REAL_MANAGERS.map((m) => ({
     user_id: m.userId,
@@ -744,6 +759,214 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
       { season: '2029', round: 1, roster_id: 8, owner_id: 5, previous_owner_id: 8 },
       { season: '2029', round: 2, roster_id: 1, owner_id: 9, previous_owner_id: 1 },
     ],
+    transactions: [
+      // 2025 Season (1212393765696700416) Completed Trades
+      {
+        transaction_id: 'tx_2025_1',
+        type: 'trade',
+        status: 'complete',
+        created: 1732032000000, // 2024-11-19
+        leg: 4,
+        season: '2025',
+        league_id: MBA_LEAGUE_ID_2025,
+        roster_ids: [4, 10],
+        adds: {
+          '1362': 4, // Damian Lillard -> Roster #4 (later flipped in tx_2025_3)
+          r4_p2: 10,
+        },
+        drops: {
+          '1362': 10,
+          r4_p2: 4,
+        },
+        draft_picks: [
+          {
+            season: '2028',
+            round: 1,
+            roster_id: 10,
+            previous_owner_id: 10,
+            owner_id: 4, // 2028 1st via #10 -> Roster #4 (later flipped in tx_2025_3)
+          },
+          {
+            season: '2026',
+            round: 2,
+            roster_id: 4,
+            previous_owner_id: 4,
+            owner_id: 10,
+          },
+        ],
+      },
+      {
+        transaction_id: 'tx_2025_2',
+        type: 'trade',
+        status: 'complete',
+        created: 1736784000000, // 2025-01-13
+        leg: 11,
+        season: '2025',
+        league_id: MBA_LEAGUE_ID_2025,
+        roster_ids: [5, 8],
+        adds: {
+          r5_p1: 8, // Jalen Brunson -> Roster #8
+        },
+        drops: {
+          r5_p1: 5,
+        },
+        draft_picks: [
+          {
+            season: '2029',
+            round: 1,
+            roster_id: 8,
+            previous_owner_id: 8,
+            owner_id: 5,
+          },
+          {
+            season: '2027',
+            round: 2,
+            roster_id: 8,
+            previous_owner_id: 8,
+            owner_id: 5, // 2027 2nd via #8 -> Roster #5 (later flipped in tx_2026_2)
+          },
+        ],
+      },
+      {
+        transaction_id: 'tx_2025_3',
+        type: 'trade',
+        status: 'complete',
+        created: 1739894400000, // 2025-02-18
+        leg: 16,
+        season: '2025',
+        league_id: MBA_LEAGUE_ID_2025,
+        roster_ids: [4, 7],
+        adds: {
+          '1362': 7, // Roster #4 flips Damian Lillard ('1362') to Roster #7
+          r4_p5: 4, // Kevin Durant -> Roster #4
+        },
+        drops: {
+          '1362': 4,
+          r4_p5: 7,
+        },
+        draft_picks: [
+          {
+            season: '2028',
+            round: 1,
+            roster_id: 10,
+            previous_owner_id: 4,
+            owner_id: 7, // Roster #4 flips 2028 1st via #10 to Roster #7 (which later flips it in tx_2026_1)
+          },
+        ],
+      },
+      // 2026 Season (1344293979830640640) Completed Trades
+      {
+        transaction_id: 'tx_2026_1',
+        type: 'trade',
+        status: 'complete',
+        created: 1762100000000, // 2026-11-02
+        leg: 1,
+        season: '2026',
+        league_id: MBA_LEAGUE_ID_2026,
+        roster_ids: [1, 7],
+        adds: {
+          '1883': 1, // Alperen Sengun -> Roster #1
+          r7_p1: 7, // Donovan Mitchell -> Roster #7
+        },
+        drops: {
+          '1883': 7,
+          r7_p1: 1,
+        },
+        draft_picks: [
+          {
+            season: '2028',
+            round: 1,
+            roster_id: 10,
+            previous_owner_id: 7,
+            owner_id: 1, // Roster #7 flips 2028 1st via #10 to Roster #1
+          },
+          {
+            season: '2029',
+            round: 2,
+            roster_id: 1,
+            previous_owner_id: 1,
+            owner_id: 7,
+          },
+        ],
+      },
+      {
+        transaction_id: 'tx_2026_2',
+        type: 'trade',
+        status: 'complete',
+        created: 1762700000000, // 2026-11-09
+        leg: 3,
+        season: '2026',
+        league_id: MBA_LEAGUE_ID_2026,
+        roster_ids: [3, 5],
+        adds: {
+          r3_p1: 3, // Zion Williamson -> Roster #3
+        },
+        drops: {
+          r3_p1: 5,
+        },
+        draft_picks: [
+          {
+            season: '2026',
+            round: 1,
+            roster_id: 3,
+            previous_owner_id: 3,
+            owner_id: 5,
+          },
+          {
+            season: '2027',
+            round: 2,
+            roster_id: 8,
+            previous_owner_id: 5,
+            owner_id: 3, // Roster #5 flips 2027 2nd via #8 to Roster #3
+          },
+        ],
+      },
+      {
+        transaction_id: 'tx_2026_3',
+        type: 'trade',
+        status: 'complete',
+        created: 1763300000000, // 2026-11-16
+        leg: 5,
+        season: '2026',
+        league_id: MBA_LEAGUE_ID_2026,
+        roster_ids: [1, 6],
+        adds: {
+          '1846': 1, // Victor Wembanyama -> Roster #1
+          r6_p1: 6, // LaMelo Ball -> Roster #6
+          r6_p7: 6, // Evan Mobley -> Roster #6
+          r6_p11: 6,
+        },
+        drops: {
+          '1846': 6,
+          r6_p1: 1,
+          r6_p7: 1,
+          r6_p11: 1,
+        },
+        draft_picks: [
+          {
+            season: '2027',
+            round: 1,
+            roster_id: 6,
+            previous_owner_id: 6,
+            owner_id: 1,
+          },
+        ],
+      },
+      // Non-trade transaction to verify filtering
+      {
+        transaction_id: 'tx_2026_waiver_1',
+        type: 'waiver',
+        status: 'complete',
+        created: 1763350000000,
+        leg: 5,
+        season: '2026',
+        league_id: MBA_LEAGUE_ID_2026,
+        roster_ids: [2],
+        adds: { r2_p11: 2 },
+        drops: null,
+        draft_picks: [],
+      },
+    ] satisfies SleeperTransaction[],
     players,
     seasonStats,
     weeklyStats,
