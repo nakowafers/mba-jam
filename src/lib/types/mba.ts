@@ -410,8 +410,6 @@ export interface DraftPickAsset {
   originalRosterName: string;
   currentOwnerRosterId: number;
   currentOwnerRosterName: string;
-  ownerRosterId: number;
-  ownerRosterName: string;
   isTraded: boolean;
   viaAnnotation: string | null;
   displayLabel: string;
@@ -606,6 +604,7 @@ export interface StagedLineupChecklist {
 }
 
 export interface LineupMutationAdapter {
+  readonly mode?: 'CHECKLIST' | 'SLEEPER_GRAPHQL';
   stageLineupChanges(payload: StageLineupPayload): StagedLineupChecklist;
 }
 
@@ -647,17 +646,7 @@ export interface ReplacementCutAsset {
   slotLabel: string;
 }
 
-export interface EvaluatedTradePlayerAsset {
-  playerId: string;
-  fullName: string;
-  nbaTeam: string;
-  positions: string[];
-  age: number | null;
-  fpg: number;
-  dynastyValue: number;
-  consolidationPremium: number;
-  fromRosterId: number;
-  toRosterId: number;
+export interface FlippedAssetMetadata {
   isFlippedAsset?: boolean;
   flippedInTransactionId?: string | null;
   flippedTimestamp?: number | null;
@@ -668,7 +657,20 @@ export interface EvaluatedTradePlayerAsset {
   flippedSummary?: string | null;
 }
 
-export interface EvaluatedTradePickAsset {
+export interface EvaluatedTradePlayerAsset extends FlippedAssetMetadata {
+  playerId: string;
+  fullName: string;
+  nbaTeam: string;
+  positions: string[];
+  age: number | null;
+  fpg: number;
+  dynastyValue: number;
+  consolidationPremium: number;
+  fromRosterId: number;
+  toRosterId: number;
+}
+
+export interface EvaluatedTradePickAsset extends FlippedAssetMetadata {
   pickId: string;
   season: DraftPickSeason;
   round: 1 | 2;
@@ -682,14 +684,6 @@ export interface EvaluatedTradePickAsset {
   consolidationPremium: number;
   fromRosterId: number;
   toRosterId: number;
-  isFlippedAsset?: boolean;
-  flippedInTransactionId?: string | null;
-  flippedTimestamp?: number | null;
-  flippedToRosterId?: number | null;
-  flippedToRosterName?: string | null;
-  flippedSeason?: string | null;
-  flippedLeg?: number | null;
-  flippedSummary?: string | null;
 }
 
 export interface OptimalStarterAssignmentSlot {
@@ -767,7 +761,11 @@ export interface HistoricalTradeFilterOptions {
   rosterId?: number | null;
 }
 
-export interface FlippedAssetChainRecord {
+export type RequiredFlippedAssetFields = {
+  [K in keyof FlippedAssetMetadata]-?: NonNullable<FlippedAssetMetadata[K]>;
+};
+
+export interface FlippedAssetChainRecord extends RequiredFlippedAssetFields {
   assetType: 'PLAYER' | 'PICK';
   assetId: string;
   assetLabel: string;
@@ -776,13 +774,6 @@ export interface FlippedAssetChainRecord {
   acquiredInTransactionId: string;
   acquiredTimestamp: number;
   isFlippedAsset: true;
-  flippedInTransactionId: string;
-  flippedTimestamp: number;
-  flippedToRosterId: number;
-  flippedToRosterName: string;
-  flippedSeason: string;
-  flippedLeg: number;
-  flippedSummary: string;
 }
 
 export interface GradedHistoricalTrade {

@@ -3,6 +3,11 @@ import { MbaLeagueEngine } from '../mba-league-engine';
 import { createDeterministicMbaFixtures } from '../fixtures/mba-fixtures';
 import { InMemorySleeperGateway } from '../../gateway/in-memory-sleeper-gateway';
 import { InMemoryManagerStateStore } from '../../store/manager-state-store';
+import {
+  SleeperGraphQLNotConfiguredError,
+  SleeperGraphQLWriteAdapter,
+} from '../../adapter/lineup-mutation-adapter';
+import { computeLockInRecommendation } from '../../lineup/lock-in-advisor';
 
 describe('MbaLeagueEngine — Custom MBA Scoring & Roster Hydration Seam', () => {
   it('computes exact MBA custom fantasy points from raw statlines including DD, TD, 40p/50p bonuses, and negative TO/TF/FF penalties', () => {
@@ -496,7 +501,7 @@ describe('MbaLeagueEngine — Weekly Lock-In Inference, Thresholds & Matchup Lev
     const fixtures = createDeterministicMbaFixtures();
     // Player 2580 (Anthony Edwards, UTIL Starter on Roster #1):
     // Remaining game k = 1 with projected 40.0 MBA FP -> Lock-In Threshold = 40.0
-    // Scenario A (Protect Lead): Completed Game 1 = 38.0 MBA FP (0.95x of 40.0 threshold, inside >= 0.92x borderline floor-lock band)
+    // Scenario A (Protect Lead): Completed Game 1 = 38.0 MBA FP (0.95x of 40.0 threshold, inside [0.93x, 1.12x) borderline floor-lock band)
     fixtures.weeklyStats = [
       {
         player_id: '2580',
@@ -566,6 +571,29 @@ describe('MbaLeagueEngine — Weekly Lock-In Inference, Thresholds & Matchup Lev
     expect(antTrailing.latestCompletedGamePoints).toBe(42.0);
     expect(antTrailing.recommendation).toBe('ROLL THE DICE');
     expect(antTrailing.leverageAnnotation).toBe('Chase Upside — Roll for Ceiling');
+
+    // Verify Protect Lead boundaries:
+    // - 0.92x (36.8 / 40.0) stays ROLL THE DICE without floor-lock label
+    // - 1.15x (46.0 / 40.0) is an unconditional SMASH LOCK without borderline floor-lock label
+    const belowFloor = computeLockInRecommendation({
+      isLocked: false,
+      latestScore: 36.8,
+      lockInThreshold: 40.0,
+      remainingGamesCount: 1,
+      projectedDifferential: 35.0,
+    });
+    expect(belowFloor.recommendation).toBe('ROLL THE DICE');
+    expect(belowFloor.leverageAnnotation).toBeNull();
+
+    const unconditionalSmash = computeLockInRecommendation({
+      isLocked: false,
+      latestScore: 46.0,
+      lockInThreshold: 40.0,
+      remainingGamesCount: 1,
+      projectedDifferential: 35.0,
+    });
+    expect(unconditionalSmash.recommendation).toBe('SMASH LOCK');
+    expect(unconditionalSmash.leverageAnnotation).toBeNull();
   });
 
   it('hydrates rich default weekly schedules, inferred Locked Scores, and open Lock-In Windows from deterministic MBA fixtures', async () => {
@@ -650,11 +678,13 @@ describe('MbaLeagueEngine — Dynasty Valuation, 2026–2029 Draft Pick Assets &
     expect(vetGuard.ageMultiplier).toBe(0.72);
     expect(vetGuard.dynastyValue).toBe(43.2);
 
-    // Verify snapshot hydrates dynastyValue on every player slot (e.g. Nikola Jokic: 43.8 FP/G, age 31, C -> 43.8 * 0.72 * 1.12 * 2 = 70.6)
+    // Verify snapshot hydrates dynastyValue on every player slot blending 2026 actual + weekly projected FP/G regardless of gamesPlayed >= 10
+    // (e.g. Nikola Jokic: gp=10, 43.8 actual FP/G + 43.0 projected FP/G -> 43.6 blended FP/G, age 31 (0.72x), C (1.12x) -> 70.3)
     const snapshot = await engine.getLeagueSnapshot();
     const jokicSlot = snapshot.activeRoster.starterSlots[7];
     expect(jokicSlot.fullName).toBe('Nikola Jokic');
-    expect(jokicSlot.dynastyValue).toBe(70.6);
+    expect(jokicSlot.seasonMetrics.gamesPlayed).toBe(10);
+    expect(jokicSlot.dynastyValue).toBe(70.3);
     expect(snapshot.rosters.every((r) => r.allPlayers.every((p) => p.dynastyValue >= 0 && p.dynastyValue <= 100))).toBe(true);
   });
 
@@ -683,7 +713,6 @@ describe('MbaLeagueEngine — Dynasty Valuation, 2026–2029 Draft Pick Assets &
     )!;
     expect(pick2028R1Via10).toBeDefined();
     expect(pick2028R1Via10.currentOwnerRosterId).toBe(1);
-    expect(pick2028R1Via10.ownerRosterId).toBe(1);
     expect(pick2028R1Via10.isTraded).toBe(true);
     expect(pick2028R1Via10.displayLabel).toContain('2028 1st via Roster #10');
 
@@ -1019,6 +1048,20 @@ describe('MbaLeagueEngine — 2-Center Bipartite Slot Optimizer, Swap & Lock Ale
     );
     // Inferred locked player Nikola Jokic (1511) is already locked in Sleeper and should not have a redundant LOCK step
     expect(lockSteps.some((s) => s.title.includes('Nikola Jokic'))).toBe(false);
+
+    // Verify v2 SleeperGraphQLWriteAdapter scaffold reports mode 'SLEEPER_GRAPHQL' and throws NOT_CONFIGURED without credentials
+    const graphqlAdapter = new SleeperGraphQLWriteAdapter();
+    expect(graphqlAdapter.mode).toBe('SLEEPER_GRAPHQL');
+    expect(graphqlAdapter.isConfigured()).toBe(false);
+    expect(() =>
+      graphqlAdapter.stageLineupChanges({
+        leagueId: checklist.leagueId,
+        rosterId: checklist.rosterId,
+        week: checklist.week,
+        slotSwaps: [],
+        lockActions: [],
+      })
+    ).toThrowError(SleeperGraphQLNotConfiguredError);
   });
 });
 
@@ -1068,8 +1111,13 @@ describe('MbaLeagueEngine — Non-Linear Dynasty Trade Analyzer & Quick Trade Te
     expect(side2.replacementCutAssets).toHaveLength(0);
     expect(side2.consolidationPremium).toBeGreaterThan(10);
 
-    // After Consolidation Premium + Replacement Cut Asset accounting, Roster #2 (superstar receiver) wins decisively
-    expect(side2.adjustedDynastyDelta).toBeGreaterThan(20);
+    // Single-sided Replacement Cut Asset accounting (ADR-0002): consolidating side does NOT subtract freedSlotReplacementCredit
+    expect(side2.adjustedOutgoingDynastyValue).toBe(
+      Math.round((side2.rawOutgoingDynastyValue + side2.outgoingConsolidationPremium) * 10) / 10
+    );
+
+    // After Consolidation Premium + single-sided Replacement Cut Asset accounting, Roster #2 (superstar receiver) wins decisively
+    expect(side2.adjustedDynastyDelta).toBeGreaterThan(15);
     expect(side1.adjustedDynastyDelta).toBeLessThan(-20);
     expect(evaluation.winnerRosterId).toBe(2);
     expect(['A+', 'A']).toContain(side2.letterGrade);

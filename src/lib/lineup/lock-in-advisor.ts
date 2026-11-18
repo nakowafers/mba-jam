@@ -217,16 +217,10 @@ export function computeLockInRecommendation(params: {
   const ratio = lockInThreshold > 0 ? latestScore / lockInThreshold : 1.25;
 
   // Matchup Leverage Shifts:
-  // 1) Leading comfortably (> +25 FP): borderline scores (>= 0.92x threshold and < 1.12x threshold) get "Protect Lead — Floor Lock"
-  if (projectedDifferential > 25 && ratio >= 0.92) {
-    if (ratio < 1.12) {
-      return {
-        recommendation: 'LEAN LOCK',
-        leverageAnnotation: 'Protect Lead — Floor Lock',
-      };
-    }
+  // 1) Leading comfortably (> +25 FP): borderline scores (>= 0.93x threshold and < 1.12x threshold) get "Protect Lead — Floor Lock"
+  if (projectedDifferential > 25 && ratio >= 0.93 && ratio < 1.12) {
     return {
-      recommendation: 'SMASH LOCK',
+      recommendation: 'LEAN LOCK',
       leverageAnnotation: 'Protect Lead — Floor Lock',
     };
   }
@@ -275,7 +269,7 @@ export function applyMatchupLeverageToRoster(
   if (projectedDifferential > 25) {
     posture = 'PROTECT_LEAD';
     postureLabel = 'Protect Lead — Floor Lock';
-    summaryText = `Projected +${projectedDifferential.toFixed(1)} FP ahead of ${opponentRoster.manager.rosterName}; lock solid floor games (>= 0.92x threshold) to bank the win.`;
+    summaryText = `Projected +${projectedDifferential.toFixed(1)} FP ahead of ${opponentRoster.manager.rosterName}; lock solid floor games (>= 0.93x threshold) to bank the win.`;
   } else if (projectedDifferential < -25) {
     posture = 'CHASE_UPSIDE';
     postureLabel = 'Chase Upside — Roll for Ceiling';
