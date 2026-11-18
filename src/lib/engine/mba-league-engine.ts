@@ -1,7 +1,13 @@
 import { ChecklistLineupAdapter } from '../adapter/lineup-mutation-adapter';
 import { computeMbaPoints, computeSeasonMetrics } from '../scoring/mba-scoring';
 import {
+  computeLeaguePowerRankings,
+  computePlayerDynastyValue,
+  resolveDraftPickMatrix,
+} from '../trades/dynasty-valuation';
+import {
   DEFAULT_MBA_SCORING_SETTINGS,
+  DraftPickMatrix,
   HydratedRoster,
   LineupMutationAdapter,
   MBA_STARTER_SLOTS,
@@ -9,7 +15,11 @@ import {
   ManagerStateStore,
   MbaLeagueSnapshot,
   MbaScoringSettings,
+  PlayerDynastyValuation,
+  PlayerDynastyValuationInput,
+  ProjectedPickTier,
   RosterPlayerSlot,
+  RosterPowerRanking,
   RosterSlotCategory,
   SleeperGameStatEntry,
   SleeperGateway,
@@ -49,6 +59,63 @@ export class MbaLeagueEngine {
   }
 
   /**
+   * Computes 0–100 MBA Dynasty Value for a player from their MBA FP/G, age curve, and 2-Center scarcity.
+   */
+  public evaluatePlayerDynastyValue(
+    input: PlayerDynastyValuationInput
+  ): PlayerDynastyValuation {
+    return computePlayerDynastyValue(input);
+  }
+
+  /**
+   * Resolves the 80-pick 2026–2029 Draft Pick Asset ownership matrix and Projected Pick Tiers.
+   */
+  public getDraftPickMatrix(snapshot: MbaLeagueSnapshot): DraftPickMatrix;
+  public getDraftPickMatrix(): Promise<DraftPickMatrix>;
+  public getDraftPickMatrix(
+    snapshot?: MbaLeagueSnapshot
+  ): DraftPickMatrix | Promise<DraftPickMatrix> {
+    if (snapshot) {
+      return resolveDraftPickMatrix({
+        rosters: snapshot.rosters,
+        tradedPicks: snapshot.tradedPicks,
+        stateStore: this.stateStore,
+      });
+    }
+    return this.getLeagueSnapshot().then((snap) =>
+      resolveDraftPickMatrix({
+        rosters: snap.rosters,
+        tradedPicks: snap.tradedPicks,
+        stateStore: this.stateStore,
+      })
+    );
+  }
+
+  /**
+   * Evaluates League Power Rankings across all 10 MBA Rosters.
+   */
+  public evaluateLeaguePowerRankings(snapshot: MbaLeagueSnapshot): RosterPowerRanking[];
+  public evaluateLeaguePowerRankings(): Promise<RosterPowerRanking[]>;
+  public evaluateLeaguePowerRankings(
+    snapshot?: MbaLeagueSnapshot
+  ): RosterPowerRanking[] | Promise<RosterPowerRanking[]> {
+    if (snapshot) {
+      const pickMatrix = this.getDraftPickMatrix(snapshot);
+      return computeLeaguePowerRankings({
+        rosters: snapshot.rosters,
+        pickMatrix,
+      });
+    }
+    return this.getLeagueSnapshot().then((snap) => {
+      const pickMatrix = this.getDraftPickMatrix(snap);
+      return computeLeaguePowerRankings({
+        rosters: snap.rosters,
+        pickMatrix,
+      });
+    });
+  }
+
+  /**
    * Selects and persists the active Manager / Roster in ManagerStateStore (localStorage).
    */
   public selectActiveRoster(rosterId: number, leagueId?: string): void {
@@ -60,6 +127,20 @@ export class MbaLeagueEngine {
    */
   public getStoredActiveRosterId(leagueId?: string): number | null {
     return this.stateStore.getActiveRosterId(leagueId);
+  }
+
+  /**
+   * Sets or clears a manual Projected Pick Tier override for a Draft Pick Asset.
+   */
+  public setPickTierOverride(pickId: string, tier: ProjectedPickTier | null): void {
+    this.stateStore.setPickTierOverride(pickId, tier);
+  }
+
+  /**
+   * Returns any manual Projected Pick Tier override for a Draft Pick Asset.
+   */
+  public getPickTierOverride(pickId: string): ProjectedPickTier | null {
+    return this.stateStore.getPickTierOverride(pickId);
   }
 
   /**
@@ -202,9 +283,24 @@ export class MbaLeagueEngine {
           : null;
 
         const completedDates = new Set(sortedCompleted.map((g) => g.date).filter(Boolean));
-        const remainingProjs = (weeklyProjByPlayerId.get(playerId) ?? []).filter(
+        const allProjs = weeklyProjByPlayerId.get(playerId) ?? [];
+        const remainingProjs = allProjs.filter(
           (proj) => !proj.date || !completedDates.has(proj.date)
         );
+
+        const projectedFpg =
+          allProjs.length > 0
+            ? allProjs.reduce((sum, p) => sum + computeMbaPoints(p.stats, scoringSettings), 0) /
+              allProjs.length
+            : null;
+
+        const { dynastyValue } = computePlayerDynastyValue({
+          actualFpg: seasonMetrics.mbaFantasyPointsPerGame,
+          gamesPlayed: seasonMetrics.gamesPlayed,
+          projectedFpg,
+          age,
+          positions,
+        });
 
         return {
           slotIndex,
@@ -228,6 +324,7 @@ export class MbaLeagueEngine {
           currentWeekCompletedGamesCount: sortedCompleted.length,
           currentWeekRemainingGamesCount: remainingProjs.length,
           latestCompletedGamePoints,
+          dynastyValue,
         };
       };
 
@@ -277,10 +374,22 @@ export class MbaLeagueEngine {
         reserveSlots,
         taxiSlots,
         allPlayers: [...starterSlots, ...benchSlots, ...reserveSlots, ...taxiSlots],
+        ownedDraftPicks: [],
         currentWeekMatchupPoints: matchup ? Math.round(matchup.points * 100) / 100 : 0,
         currentWeekMatchupId: matchup?.matchup_id ?? null,
         starterTotalFpg,
       });
+    }
+
+    const pickMatrix = resolveDraftPickMatrix({
+      rosters: hydratedRosters,
+      tradedPicks: bundle.tradedPicks ?? [],
+      stateStore: this.stateStore,
+    });
+
+    for (const roster of hydratedRosters) {
+      const row = pickMatrix.rows.find((r) => r.rosterId === roster.rosterId);
+      roster.ownedDraftPicks = row ? row.allOwnedPicks : [];
     }
 
     const storedRosterId = this.stateStore.getActiveRosterId(bundle.league.league_id);
@@ -298,6 +407,8 @@ export class MbaLeagueEngine {
       starterSlotTemplate: MBA_STARTER_SLOTS,
       managers,
       rosters: hydratedRosters,
+      tradedPicks: bundle.tradedPicks ?? [],
+      draftPickAssets: pickMatrix.allPicks,
       activeRosterId: activeRoster.rosterId,
       activeRoster,
       syncedAt: new Date().toISOString(),
