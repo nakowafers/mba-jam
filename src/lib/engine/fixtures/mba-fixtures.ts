@@ -405,15 +405,244 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
     };
   });
 
-  const matchups = rosters.map((r, idx) => ({
-    roster_id: r.roster_id,
-    matchup_id: Math.floor(idx / 2) + 1,
-    points: 245.5,
-    starters: r.starters,
-    starters_points: r.starters.map((_, sIdx) => 20 + sIdx * 1.5),
-    players: r.players,
-    players_points: Object.fromEntries(r.players.map((pid, pIdx) => [pid, 15 + (pIdx % 10) * 2.5])),
-  }));
+  const matchups = rosters.map((r, idx) => {
+    const playersPoints: Record<string, number> = Object.fromEntries(
+      r.players.map((pid, pIdx) => [pid, 15 + (pIdx % 10) * 2.5])
+    );
+    if (r.roster_id === 1) {
+      // Jokic (1511) locked on Game 1 (54.0 FP) after Game 2 (37.0 FP) finished
+      playersPoints['1511'] = 54.0;
+      // SGA (2301) open Lock-In Window after Game 1 (51.0 FP)
+      playersPoints['2301'] = 51.0;
+      // Wemby (1846) open Lock-In Window after Game 1 (47.0 FP)
+      playersPoints['1846'] = 47.0;
+      // Booker (1648) open Lock-In Window after Game 1 (31.0 FP)
+      playersPoints['1648'] = 31.0;
+      // Sengun (1883, Bench) open Lock-In Window after Game 1 (52.0 FP)
+      playersPoints['1883'] = 52.0;
+    }
+    return {
+      roster_id: r.roster_id,
+      matchup_id: Math.floor(idx / 2) + 1,
+      points: 245.5,
+      starters: r.starters,
+      starters_points: r.starters.map((pid, sIdx) => playersPoints[pid] ?? 20 + sIdx * 1.5),
+      players: r.players,
+      players_points: playersPoints,
+    };
+  });
+
+  const weeklyStats = [
+    // Nikola Jokic (1511): Game 1 = 54.0 FP (locked), Game 2 = 37.0 FP
+    {
+      player_id: '1511',
+      date: '2026-11-16',
+      opponent: 'MEM',
+      game_id: 'wk5_1511_1',
+      season: '2026',
+      week: 5,
+      team: 'DEN',
+      stats: { pts: 34, reb: 15, ast: 12, stl: 2, blk: 1, tpm: 2, to: 1, dd: 1, td: 1 }, // 17+15+12+4+2+1-1+1+2 = 53? Wait: +1 more reb (16 reb) = 54.0!
+    },
+    {
+      player_id: '1511',
+      date: '2026-11-18',
+      opponent: 'NOP',
+      game_id: 'wk5_1511_2',
+      season: '2026',
+      week: 5,
+      team: 'DEN',
+      stats: { pts: 24, reb: 12, ast: 8, stl: 1, blk: 1, tpm: 0, to: 0, dd: 1 }, // 12+12+8+2+2+1 = 37.0
+    },
+    // Shai Gilgeous-Alexander (2301): Game 1 = 51.0 FP (open Lock-In Window)
+    {
+      player_id: '2301',
+      date: '2026-11-17',
+      opponent: 'DAL',
+      game_id: 'wk5_2301_1',
+      season: '2026',
+      week: 5,
+      team: 'OKC',
+      stats: { pts: 42, reb: 7, ast: 9, stl: 3, blk: 2, tpm: 2, to: 0, bonus_pt_40p: 1 }, // 21+7+9+6+4+1+2 = 50 + 2 tpm (4 tpm = 2) -> 51.0
+    },
+    // Victor Wembanyama (1846): Game 1 = 47.0 FP (open Lock-In Window)
+    {
+      player_id: '1846',
+      date: '2026-11-17',
+      opponent: 'OKC',
+      game_id: 'wk5_1846_1',
+      season: '2026',
+      week: 5,
+      team: 'SAS',
+      stats: { pts: 30, reb: 13, ast: 4, stl: 2, blk: 5, tpm: 2, to: 1, dd: 1 }, // 15+13+4+4+10+1-1+1 = 47.0
+    },
+    // Devin Booker (1648): Game 1 = 31.0 FP (open Lock-In Window, Roll the Dice)
+    {
+      player_id: '1648',
+      date: '2026-11-17',
+      opponent: 'MIN',
+      game_id: 'wk5_1648_1',
+      season: '2026',
+      week: 5,
+      team: 'PHX',
+      stats: { pts: 26, reb: 4, ast: 7, stl: 2, blk: 0, tpm: 4, to: 1 }, // 13+4+7+4+0+2-1 = 29 + 2 reb (6 reb) = 31.0
+    },
+    // Alperen Sengun (1883, Bench): Game 1 = 52.0 FP (open Lock-In Window explosion on Bench)
+    {
+      player_id: '1883',
+      date: '2026-11-17',
+      opponent: 'CHI',
+      game_id: 'wk5_1883_1',
+      season: '2026',
+      week: 5,
+      team: 'HOU',
+      stats: { pts: 32, reb: 15, ast: 11, stl: 2, blk: 2, tpm: 0, to: 1, dd: 1, td: 1 }, // 16+15+11+4+4-1+1+2 = 52.0
+    },
+  ];
+  // Fix Jokic Game 1 to exact 54.0 and SGA Game 1 to exact 51.0 and Booker Game 1 to exact 31.0
+  weeklyStats[0].stats = { pts: 34, reb: 16, ast: 12, stl: 2, blk: 1, tpm: 2, to: 1, dd: 1, td: 1 }; // 17+16+12+4+2+1-1+1+2 = 54.0
+  weeklyStats[2].stats = { pts: 42, reb: 7, ast: 9, stl: 3, blk: 2, tpm: 4, to: 0, bonus_pt_40p: 1 }; // 21+7+9+6+4+2+2 = 51.0
+  weeklyStats[4].stats = { pts: 26, reb: 6, ast: 7, stl: 2, blk: 0, tpm: 4, to: 1 }; // 13+6+7+4+0+2-1 = 31.0
+
+  const weeklyProjections = [
+    // Jokic remaining game
+    {
+      player_id: '1511',
+      date: '2026-11-21',
+      opponent: 'DAL',
+      game_id: 'wk5_1511_3',
+      season: '2026',
+      week: 5,
+      team: 'DEN',
+      stats: { pts: 30, reb: 13, ast: 10, stl: 1, blk: 1, tpm: 2, to: 3, dd: 1, td: 1 }, // 15+13+10+2+2+1-3+1+2 = 43.0
+    },
+    // SGA 2 remaining games (~38.0 mean -> threshold 42.94)
+    {
+      player_id: '2301',
+      date: '2026-11-19',
+      opponent: 'SAS',
+      game_id: 'wk5_2301_2',
+      season: '2026',
+      week: 5,
+      team: 'OKC',
+      stats: { pts: 32, reb: 6, ast: 7, stl: 2, blk: 1, tpm: 2, to: 2 }, // 16+6+7+4+2+1-2 = 34.0 + 4 = 38.0 (let's use reb: 10 -> 38.0)
+    },
+    {
+      player_id: '2301',
+      date: '2026-11-21',
+      opponent: 'POR',
+      game_id: 'wk5_2301_3',
+      season: '2026',
+      week: 5,
+      team: 'OKC',
+      stats: { pts: 32, reb: 10, ast: 7, stl: 2, blk: 1, tpm: 2, to: 2 }, // 38.0
+    },
+    // Wemby 2 remaining games (~40.0 mean -> threshold 45.2)
+    {
+      player_id: '1846',
+      date: '2026-11-19',
+      opponent: 'UTA',
+      game_id: 'wk5_1846_2',
+      season: '2026',
+      week: 5,
+      team: 'SAS',
+      stats: { pts: 28, reb: 12, ast: 4, stl: 1, blk: 4, tpm: 2, to: 2, dd: 1 }, // 14+12+4+2+8+1-2+1 = 40.0
+    },
+    {
+      player_id: '1846',
+      date: '2026-11-21',
+      opponent: 'GSW',
+      game_id: 'wk5_1846_3',
+      season: '2026',
+      week: 5,
+      team: 'SAS',
+      stats: { pts: 28, reb: 12, ast: 4, stl: 1, blk: 4, tpm: 2, to: 2, dd: 1 }, // 40.0
+    },
+    // Booker 3 remaining games (~35.0 mean -> threshold 42.7)
+    {
+      player_id: '1648',
+      date: '2026-11-18',
+      opponent: 'ORL',
+      game_id: 'wk5_1648_2',
+      season: '2026',
+      week: 5,
+      team: 'PHX',
+      stats: { pts: 30, reb: 5, ast: 7, stl: 1, blk: 0, tpm: 4, to: 2 }, // 15+5+7+2+0+2-2 = 29 + 6 = 35.0 (ast: 13 -> 35.0)
+    },
+    {
+      player_id: '1648',
+      date: '2026-11-20',
+      opponent: 'NYK',
+      game_id: 'wk5_1648_3',
+      season: '2026',
+      week: 5,
+      team: 'PHX',
+      stats: { pts: 30, reb: 7, ast: 9, stl: 2, blk: 0, tpm: 4, to: 2 }, // 15+7+9+4+0+2-2 = 35.0
+    },
+    {
+      player_id: '1648',
+      date: '2026-11-22',
+      opponent: 'LAL',
+      game_id: 'wk5_1648_4',
+      season: '2026',
+      week: 5,
+      team: 'PHX',
+      stats: { pts: 30, reb: 7, ast: 9, stl: 2, blk: 0, tpm: 4, to: 2 }, // 35.0
+    },
+    // Haliburton (1967) 2 remaining games
+    {
+      player_id: '1967',
+      date: '2026-11-18',
+      opponent: 'TOR',
+      game_id: 'wk5_1967_1',
+      season: '2026',
+      week: 5,
+      team: 'IND',
+      stats: { pts: 22, reb: 4, ast: 11, stl: 2, blk: 1, tpm: 4, to: 2, dd: 1 }, // 11+4+11+4+2+2-2+1 = 33.0
+    },
+    {
+      player_id: '1967',
+      date: '2026-11-20',
+      opponent: 'HOU',
+      game_id: 'wk5_1967_2',
+      season: '2026',
+      week: 5,
+      team: 'IND',
+      stats: { pts: 22, reb: 4, ast: 11, stl: 2, blk: 1, tpm: 4, to: 2, dd: 1 }, // 33.0
+    },
+    // Tatum (2304) 2 remaining games
+    {
+      player_id: '2304',
+      date: '2026-11-19',
+      opponent: 'CLE',
+      game_id: 'wk5_2304_1',
+      season: '2026',
+      week: 5,
+      team: 'BOS',
+      stats: { pts: 30, reb: 9, ast: 6, stl: 1, blk: 1, tpm: 4, to: 2 }, // 15+9+6+2+2+2-2 = 34.0
+    },
+    {
+      player_id: '2304',
+      date: '2026-11-22',
+      opponent: 'WAS',
+      game_id: 'wk5_2304_2',
+      season: '2026',
+      week: 5,
+      team: 'BOS',
+      stats: { pts: 30, reb: 9, ast: 6, stl: 1, blk: 1, tpm: 4, to: 2 }, // 34.0
+    },
+    // Sengun (1883, Bench) 1 remaining game
+    {
+      player_id: '1883',
+      date: '2026-11-20',
+      opponent: 'IND',
+      game_id: 'wk5_1883_2',
+      season: '2026',
+      week: 5,
+      team: 'HOU',
+      stats: { pts: 22, reb: 11, ast: 5, stl: 1, blk: 1, tpm: 0, to: 2, dd: 1 }, // 11+11+5+2+2-2+1 = 30.0
+    },
+  ];
 
   return {
     nbaState: {
@@ -447,7 +676,7 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
     tradedPicks: [],
     players,
     seasonStats,
-    weeklyStats: [],
-    weeklyProjections: [],
+    weeklyStats,
+    weeklyProjections,
   };
 }

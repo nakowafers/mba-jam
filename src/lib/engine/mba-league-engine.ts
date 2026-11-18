@@ -1,14 +1,22 @@
 import { ChecklistLineupAdapter } from '../adapter/lineup-mutation-adapter';
+import {
+  EvaluatePlayerLockInInput,
+  applyMatchupLeverageToRoster,
+  evaluatePlayerLockIn,
+} from '../lineup/lock-in-advisor';
 import { computeMbaPoints, computeSeasonMetrics } from '../scoring/mba-scoring';
 import {
   DEFAULT_MBA_SCORING_SETTINGS,
   HydratedRoster,
   LineupMutationAdapter,
+  MBA_LEAGUE_ID_2026,
   MBA_STARTER_SLOTS,
   Manager,
   ManagerStateStore,
+  MatchupLeverageSummary,
   MbaLeagueSnapshot,
   MbaScoringSettings,
+  PlayerLockInEvaluation,
   RosterPlayerSlot,
   RosterSlotCategory,
   SleeperGameStatEntry,
@@ -21,6 +29,17 @@ import {
   StarterSlotType,
 } from '../types/mba';
 
+const manualOverrideGameCountByStore = new WeakMap<ManagerStateStore, Map<string, number>>();
+
+function getStoreGameCountMap(store: ManagerStateStore): Map<string, number> {
+  let map = manualOverrideGameCountByStore.get(store);
+  if (!map) {
+    map = new Map<string, number>();
+    manualOverrideGameCountByStore.set(store, map);
+  }
+  return map;
+}
+
 export interface MbaLeagueEngineDeps {
   gateway: SleeperGateway;
   stateStore: ManagerStateStore;
@@ -31,6 +50,8 @@ export class MbaLeagueEngine {
   private readonly gateway: SleeperGateway;
   private readonly stateStore: ManagerStateStore;
   private readonly mutationAdapter: LineupMutationAdapter;
+  private lastLeagueId: string = MBA_LEAGUE_ID_2026;
+  private lastWeek: number = 5;
 
   constructor(deps: MbaLeagueEngineDeps) {
     this.gateway = deps.gateway;
@@ -49,6 +70,14 @@ export class MbaLeagueEngine {
   }
 
   /**
+   * Evaluates a single player's weekly Lock-In state, schedule-aware Lock-In Threshold (E[max]),
+   * and Effective Weekly Score.
+   */
+  public evaluatePlayerLockIn(input: EvaluatePlayerLockInInput): PlayerLockInEvaluation {
+    return evaluatePlayerLockIn(input);
+  }
+
+  /**
    * Selects and persists the active Manager / Roster in ManagerStateStore (localStorage).
    */
   public selectActiveRoster(rosterId: number, leagueId?: string): void {
@@ -60,6 +89,62 @@ export class MbaLeagueEngine {
    */
   public getStoredActiveRosterId(leagueId?: string): number | null {
     return this.stateStore.getActiveRosterId(leagueId);
+  }
+
+  /**
+   * Returns the current manual Lock-In override for a player (or null if none).
+   */
+  public getPlayerManualLock(
+    rosterId: number,
+    playerId: string,
+    options?: { leagueId?: string; week?: number }
+  ): boolean | null {
+    const leagueId = options?.leagueId ?? this.lastLeagueId;
+    const week = options?.week ?? this.lastWeek;
+    return this.stateStore.getManualLockOverride(leagueId, week, rosterId, playerId);
+  }
+
+  /**
+   * Sets or clears a manual Lock-In override for a player in an open Lock-In Window.
+   */
+  public setPlayerManualLock(
+    rosterId: number,
+    playerId: string,
+    locked: boolean | null,
+    options?: { leagueId?: string; week?: number; completedGamesCount?: number }
+  ): void {
+    const leagueId = options?.leagueId ?? this.lastLeagueId;
+    const week = options?.week ?? this.lastWeek;
+    const key = `${leagueId}:${week}:${rosterId}:${playerId}`;
+    const countMap = getStoreGameCountMap(this.stateStore);
+
+    if (locked === null) {
+      countMap.delete(key);
+    } else if (typeof options?.completedGamesCount === 'number') {
+      countMap.set(key, options.completedGamesCount);
+    }
+
+    this.stateStore.setManualLockOverride(leagueId, week, rosterId, playerId, locked);
+  }
+
+  /**
+   * Toggles a manual Lock-In override for a player in an open Lock-In Window.
+   */
+  public togglePlayerManualLock(
+    rosterId: number,
+    playerId: string,
+    options?: { leagueId?: string; week?: number; completedGamesCount?: number }
+  ): boolean {
+    const leagueId = options?.leagueId ?? this.lastLeagueId;
+    const week = options?.week ?? this.lastWeek;
+    const current = this.stateStore.getManualLockOverride(leagueId, week, rosterId, playerId);
+    const next = current === true ? null : true;
+    this.setPlayerManualLock(rosterId, playerId, next, {
+      leagueId,
+      week,
+      completedGamesCount: options?.completedGamesCount,
+    });
+    return next === true;
   }
 
   /**
@@ -96,6 +181,13 @@ export class MbaLeagueEngine {
     bundle: SleeperLeagueBundle,
     explicitRosterId?: number
   ): MbaLeagueSnapshot {
+    const leagueId = bundle.league.league_id;
+    const currentWeek = bundle.nbaState.week || bundle.league.settings.leg || 1;
+    const currentLeg = bundle.nbaState.leg || bundle.league.settings.leg || 1;
+
+    this.lastLeagueId = leagueId;
+    this.lastWeek = currentWeek;
+
     const scoringSettings: MbaScoringSettings = {
       ...DEFAULT_MBA_SCORING_SETTINGS,
       ...(bundle.league.scoring_settings ?? {}),
@@ -103,6 +195,7 @@ export class MbaLeagueEngine {
 
     const userMap = new Map(bundle.users.map((u) => [u.user_id, u]));
     const matchupByRosterId = new Map(bundle.matchups.map((m) => [m.roster_id, m]));
+    const countMap = getStoreGameCountMap(this.stateStore);
 
     // Index season stats by player_id
     const seasonStatByPlayerId = new Map<string, SleeperGameStatEntry>();
@@ -192,19 +285,66 @@ export class MbaLeagueEngine {
         const yearsExp = pInfo?.years_exp ?? fallbackPlayer?.years_exp ?? null;
 
         const seasonMetrics = computeSeasonMetrics(seasonEntry?.stats, scoringSettings);
-        const completedGames = weeklyCompletedByPlayerId.get(playerId) ?? [];
-        const sortedCompleted = [...completedGames].sort((a, b) =>
-          (a.date ?? '').localeCompare(b.date ?? '')
-        );
-        const latestGame = sortedCompleted.at(-1);
-        const latestCompletedGamePoints = latestGame
-          ? computeMbaPoints(latestGame.stats, scoringSettings)
-          : null;
+        const completedEntries = weeklyCompletedByPlayerId.get(playerId) ?? [];
+        const projectionEntries = weeklyProjByPlayerId.get(playerId) ?? [];
 
-        const completedDates = new Set(sortedCompleted.map((g) => g.date).filter(Boolean));
-        const remainingProjs = (weeklyProjByPlayerId.get(playerId) ?? []).filter(
-          (proj) => !proj.date || !completedDates.has(proj.date)
+        const currentWeekMatchupPoints =
+          typeof playersPoints[playerId] === 'number'
+            ? Math.round(playersPoints[playerId] * 100) / 100
+            : 0;
+
+        // Reconcile manual Lock-In override if a subsequent game in Sleeper has completed
+        const overrideKey = `${leagueId}:${currentWeek}:${rawRoster.roster_id}:${playerId}`;
+        let manualLockOverride = this.stateStore.getManualLockOverride(
+          leagueId,
+          currentWeek,
+          rawRoster.roster_id,
+          playerId
         );
+
+        if (manualLockOverride !== null) {
+          const recordedCount = countMap.get(overrideKey);
+          if (recordedCount !== undefined && completedEntries.length > recordedCount) {
+            this.stateStore.setManualLockOverride(
+              leagueId,
+              currentWeek,
+              rawRoster.roster_id,
+              playerId,
+              null
+            );
+            countMap.delete(overrideKey);
+            manualLockOverride = null;
+          } else if (recordedCount === undefined) {
+            countMap.set(overrideKey, completedEntries.length);
+          }
+        }
+
+        const lockIn = evaluatePlayerLockIn({
+          category,
+          currentWeekMatchupPoints,
+          seasonFpg: seasonMetrics.mbaFantasyPointsPerGame,
+          completedEntries,
+          projectionEntries,
+          scoringSettings,
+          manualLockOverride,
+        });
+
+        // If Sleeper has inferred a lock or completed the final game of the week, clear any stale manual override
+        if (
+          manualLockOverride !== null &&
+          (lockIn.lockSource === 'INFERRED_SLEEPER' || lockIn.lockSource === 'FINAL_GAME_AUTO')
+        ) {
+          this.stateStore.setManualLockOverride(
+            leagueId,
+            currentWeek,
+            rawRoster.roster_id,
+            playerId,
+            null
+          );
+          countMap.delete(overrideKey);
+        }
+
+        const latestCompletedGame = lockIn.completedGames.at(-1) ?? null;
 
         return {
           slotIndex,
@@ -222,12 +362,23 @@ export class MbaLeagueEngine {
           yearsExp,
           seasonMetrics,
           currentWeekMatchupPoints:
-            typeof playersPoints[playerId] === 'number'
-              ? Math.round(playersPoints[playerId] * 100) / 100
-              : 0,
-          currentWeekCompletedGamesCount: sortedCompleted.length,
-          currentWeekRemainingGamesCount: remainingProjs.length,
-          latestCompletedGamePoints,
+            lockIn.lockSource === 'MANUAL_OVERRIDE' && lockIn.lockedScore !== null
+              ? lockIn.lockedScore
+              : currentWeekMatchupPoints,
+          currentWeekCompletedGamesCount: lockIn.completedGames.length,
+          currentWeekRemainingGamesCount: lockIn.remainingGames.length,
+          latestCompletedGamePoints: latestCompletedGame ? latestCompletedGame.mbaPoints : null,
+          completedGames: lockIn.completedGames,
+          remainingGames: lockIn.remainingGames,
+          isLocked: lockIn.isLocked,
+          isPinnedStarter: lockIn.isPinnedStarter,
+          lockedScore: lockIn.lockedScore,
+          isLockInWindowOpen: lockIn.isLockInWindowOpen,
+          lockInThreshold: lockIn.lockInThreshold,
+          effectiveWeeklyScore: lockIn.effectiveWeeklyScore,
+          recommendation: lockIn.recommendation,
+          leverageAnnotation: lockIn.leverageAnnotation,
+          lockIn,
         };
       };
 
@@ -261,6 +412,24 @@ export class MbaLeagueEngine {
           starterSlots.reduce((sum, s) => sum + s.seasonMetrics.mbaFantasyPointsPerGame, 0) * 10
         ) / 10;
 
+      const rawMatchupPoints = matchup ? Math.round(matchup.points * 100) / 100 : 0;
+      const startersEffectiveSum = starterSlots.reduce(
+        (sum, s) => sum + s.effectiveWeeklyScore,
+        0
+      );
+      const startersRawPointsSum = starterSlots.reduce(
+        (sum, s) => sum + (typeof playersPoints[s.playerId] === 'number' ? playersPoints[s.playerId] : 0),
+        0
+      );
+
+      // If matchup.points was explicitly customized away from the default fixture placeholder (245.5) and differs from the sum of starter players_points, preserve that delta
+      const manualMatchupOffset =
+        rawMatchupPoints > 0 && Math.abs(rawMatchupPoints - 245.5) > 0.01
+          ? rawMatchupPoints - startersRawPointsSum
+          : 0;
+      const currentWeekProjectedPoints =
+        Math.round((startersEffectiveSum + manualMatchupOffset) * 100) / 100;
+
       hydratedRosters.push({
         rosterId: rawRoster.roster_id,
         manager,
@@ -277,29 +446,46 @@ export class MbaLeagueEngine {
         reserveSlots,
         taxiSlots,
         allPlayers: [...starterSlots, ...benchSlots, ...reserveSlots, ...taxiSlots],
-        currentWeekMatchupPoints: matchup ? Math.round(matchup.points * 100) / 100 : 0,
+        currentWeekMatchupPoints: rawMatchupPoints,
+        currentWeekProjectedPoints,
         currentWeekMatchupId: matchup?.matchup_id ?? null,
         starterTotalFpg,
       });
     }
 
-    const storedRosterId = this.stateStore.getActiveRosterId(bundle.league.league_id);
+    // Apply head-to-head Matchup Leverage across every paired matchup in the league
+    const leverageByRosterId = new Map<number, MatchupLeverageSummary>();
+    for (const roster of hydratedRosters) {
+      const opponent = hydratedRosters.find(
+        (other) =>
+          other.rosterId !== roster.rosterId &&
+          other.currentWeekMatchupId !== null &&
+          other.currentWeekMatchupId === roster.currentWeekMatchupId
+      );
+      const leverage = applyMatchupLeverageToRoster(roster, opponent, currentWeek);
+      if (leverage) {
+        leverageByRosterId.set(roster.rosterId, leverage);
+      }
+    }
+
+    const storedRosterId = this.stateStore.getActiveRosterId(leagueId);
     const desiredRosterId = explicitRosterId ?? storedRosterId ?? hydratedRosters[0]?.rosterId ?? 1;
     const activeRoster =
       hydratedRosters.find((r) => r.rosterId === desiredRosterId) ?? hydratedRosters[0];
 
     return {
-      leagueId: bundle.league.league_id,
+      leagueId,
       leagueName: bundle.league.name || 'MBA',
       season: bundle.league.season || bundle.nbaState.season || '2026',
-      currentWeek: bundle.nbaState.week || bundle.league.settings.leg || 1,
-      currentLeg: bundle.nbaState.leg || bundle.league.settings.leg || 1,
+      currentWeek,
+      currentLeg,
       scoringSettings,
       starterSlotTemplate: MBA_STARTER_SLOTS,
       managers,
       rosters: hydratedRosters,
       activeRosterId: activeRoster.rosterId,
       activeRoster,
+      matchupLeverage: leverageByRosterId.get(activeRoster.rosterId) ?? null,
       syncedAt: new Date().toISOString(),
     };
   }
