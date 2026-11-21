@@ -8,7 +8,9 @@ import { evaluateRosterLineupOptimization } from '../lineup/slot-optimizer';
 import {
   computeMbaPoints,
   computePlayerLockInHistoryMap,
+  computeRosterWeeklyMatchupAverages,
   computeSeasonMetrics,
+  countCompletedMatchupWeeks,
 } from '../scoring/mba-scoring';
 import {
   computeLeaguePowerRankings,
@@ -492,19 +494,10 @@ export class MbaLeagueEngine {
     const countMap = getStoreGameCountMap(this.stateStore);
 
     const lockInHistoryByPlayerId = computePlayerLockInHistoryMap(bundle.historicalMatchups);
-    const completedWeeksCount = Object.keys(bundle.historicalMatchups ?? {}).length;
-
-    const weeklyMatchupTotalsByRosterId = new Map<number, number[]>();
-    for (const weekMatchups of Object.values(bundle.historicalMatchups ?? {})) {
-      if (!Array.isArray(weekMatchups)) continue;
-      for (const m of weekMatchups) {
-        if (typeof m.points === 'number' && !Number.isNaN(m.points) && m.points > 0) {
-          const list = weeklyMatchupTotalsByRosterId.get(m.roster_id) ?? [];
-          list.push(m.points);
-          weeklyMatchupTotalsByRosterId.set(m.roster_id, list);
-        }
-      }
-    }
+    const completedWeeksCount = countCompletedMatchupWeeks(bundle.historicalMatchups);
+    const weeklyMatchupAverageByRosterId = computeRosterWeeklyMatchupAverages(
+      bundle.historicalMatchups
+    );
 
     // Index season stats by player_id
     const seasonStatByPlayerId = new Map<string, SleeperGameStatEntry>();
@@ -774,15 +767,8 @@ export class MbaLeagueEngine {
           starterSlots.reduce((sum, s) => sum + s.seasonMetrics.averageLockInPoints, 0) * 10
         ) / 10;
 
-      const rosterCompletedScores = weeklyMatchupTotalsByRosterId.get(rawRoster.roster_id) ?? [];
       const averageWeeklyMatchupPoints =
-        rosterCompletedScores.length > 0
-          ? Math.round(
-              (rosterCompletedScores.reduce((sum, pts) => sum + pts, 0) /
-                rosterCompletedScores.length) *
-                10
-            ) / 10
-          : null;
+        weeklyMatchupAverageByRosterId.get(rawRoster.roster_id) ?? null;
 
       const rawMatchupPoints = matchup ? Math.round(matchup.points * 100) / 100 : 0;
       const startersEffectiveSum = starterSlots.reduce(

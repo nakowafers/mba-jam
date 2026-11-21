@@ -80,19 +80,23 @@ function makePlayer(overrides: {
   };
 }
 
+function createBaseStarters(): RosterPlayerSlot[] {
+  return [
+    makePlayer({ playerId: 'pg1', fullName: 'PG One', positions: ['PG'], fpg: 30, avgLockIn: 36 }),
+    makePlayer({ playerId: 'sg1', fullName: 'SG One', positions: ['SG'], fpg: 28, avgLockIn: 34 }),
+    makePlayer({ playerId: 'g1', fullName: 'G One', positions: ['PG', 'SG'], fpg: 26, avgLockIn: 32 }),
+    makePlayer({ playerId: 'sf1', fullName: 'SF One', positions: ['SF'], fpg: 25, avgLockIn: 31 }),
+    makePlayer({ playerId: 'pf1', fullName: 'PF One', positions: ['PF'], fpg: 24, avgLockIn: 30 }),
+    makePlayer({ playerId: 'f1', fullName: 'F One', positions: ['SF', 'PF'], fpg: 23, avgLockIn: 29 }),
+    makePlayer({ playerId: 'c1', fullName: 'C One', positions: ['C'], fpg: 32, avgLockIn: 40 }),
+    makePlayer({ playerId: 'c2', fullName: 'C Two', positions: ['C'], fpg: 27, avgLockIn: 35 }),
+    makePlayer({ playerId: 'u1', fullName: 'Util One', positions: ['SG'], fpg: 22, avgLockIn: 28 }),
+  ];
+}
+
 describe('Trade Analyzer — Average Lock-In Optimization & Evaluation', () => {
   it('solveOptimalStarting10Lineup maximizes averageLockInPoints over raw FP/G and returns totalAvgLockIn, totalFpg, and per-slot avgLockIn', () => {
-    const baseStarters: RosterPlayerSlot[] = [
-      makePlayer({ playerId: 'pg1', fullName: 'PG One', positions: ['PG'], fpg: 30, avgLockIn: 36 }),
-      makePlayer({ playerId: 'sg1', fullName: 'SG One', positions: ['SG'], fpg: 28, avgLockIn: 34 }),
-      makePlayer({ playerId: 'g1', fullName: 'G One', positions: ['PG', 'SG'], fpg: 26, avgLockIn: 32 }),
-      makePlayer({ playerId: 'sf1', fullName: 'SF One', positions: ['SF'], fpg: 25, avgLockIn: 31 }),
-      makePlayer({ playerId: 'pf1', fullName: 'PF One', positions: ['PF'], fpg: 24, avgLockIn: 30 }),
-      makePlayer({ playerId: 'f1', fullName: 'F One', positions: ['SF', 'PF'], fpg: 23, avgLockIn: 29 }),
-      makePlayer({ playerId: 'c1', fullName: 'C One', positions: ['C'], fpg: 32, avgLockIn: 40 }),
-      makePlayer({ playerId: 'c2', fullName: 'C Two', positions: ['C'], fpg: 27, avgLockIn: 35 }),
-      makePlayer({ playerId: 'u1', fullName: 'Util One', positions: ['SG'], fpg: 22, avgLockIn: 28 }),
-    ];
+    const baseStarters = createBaseStarters();
 
     // Competing for the 10th starter slot (UTIL):
     // steadyFloor has higher raw FP/G (24.0 > 20.0)
@@ -132,17 +136,7 @@ describe('Trade Analyzer — Average Lock-In Optimization & Evaluation', () => {
   });
 
   it('solveOptimalStarting10Lineup breaks averageLockInPoints ties using mbaFantasyPointsPerGame then dynastyValue', () => {
-    const baseStarters: RosterPlayerSlot[] = [
-      makePlayer({ playerId: 'pg1', fullName: 'PG One', positions: ['PG'], fpg: 30, avgLockIn: 36 }),
-      makePlayer({ playerId: 'sg1', fullName: 'SG One', positions: ['SG'], fpg: 28, avgLockIn: 34 }),
-      makePlayer({ playerId: 'g1', fullName: 'G One', positions: ['PG', 'SG'], fpg: 26, avgLockIn: 32 }),
-      makePlayer({ playerId: 'sf1', fullName: 'SF One', positions: ['SF'], fpg: 25, avgLockIn: 31 }),
-      makePlayer({ playerId: 'pf1', fullName: 'PF One', positions: ['PF'], fpg: 24, avgLockIn: 30 }),
-      makePlayer({ playerId: 'f1', fullName: 'F One', positions: ['SF', 'PF'], fpg: 23, avgLockIn: 29 }),
-      makePlayer({ playerId: 'c1', fullName: 'C One', positions: ['C'], fpg: 32, avgLockIn: 40 }),
-      makePlayer({ playerId: 'c2', fullName: 'C Two', positions: ['C'], fpg: 27, avgLockIn: 35 }),
-      makePlayer({ playerId: 'u1', fullName: 'Util One', positions: ['SG'], fpg: 22, avgLockIn: 28 }),
-    ];
+    const baseStarters = createBaseStarters();
 
     const lowerTie = makePlayer({
       playerId: 'tie-low',
@@ -165,6 +159,58 @@ describe('Trade Analyzer — Average Lock-In Optimization & Evaluation', () => {
     const starterIds = result.starters.map((s) => s.playerId);
     expect(starterIds).toContain('tie-high-fpg');
     expect(starterIds).not.toContain('tie-low');
+  });
+
+  it('solveOptimalStarting10Lineup breaks cross-lineup totalAvgLockIn ties by higher total FP/G when two distinct 10-player combinations have identical totalAvgLockIn', () => {
+    // 8 locked-in starters with avgLockIn >= 36 filling C1, SG, G, SF, PF, F, UTIL, UTIL
+    // leaving exactly one C slot and one PG slot open.
+    const lockedEight: RosterPlayerSlot[] = [
+      makePlayer({ playerId: 'c1', fullName: 'C One', positions: ['C'], fpg: 35, avgLockIn: 45 }),
+      makePlayer({ playerId: 'sg1', fullName: 'SG One', positions: ['SG'], fpg: 32, avgLockIn: 42 }),
+      makePlayer({ playerId: 'sg2', fullName: 'SG Two', positions: ['SG'], fpg: 31, avgLockIn: 41 }),
+      makePlayer({ playerId: 'sf1', fullName: 'SF One', positions: ['SF'], fpg: 30, avgLockIn: 40 }),
+      makePlayer({ playerId: 'pf1', fullName: 'PF One', positions: ['PF'], fpg: 29, avgLockIn: 39 }),
+      makePlayer({ playerId: 'sf2', fullName: 'SF Two', positions: ['SF'], fpg: 28, avgLockIn: 38 }),
+      makePlayer({ playerId: 'pf2', fullName: 'PF Two', positions: ['PF'], fpg: 27, avgLockIn: 37 }),
+      makePlayer({ playerId: 'sf3', fullName: 'SF Three', positions: ['SF'], fpg: 26, avgLockIn: 36 }),
+    ];
+
+    // Two distinct 10-player combinations tie at totalAvgLockIn = 318 + 50 = 368:
+    //   1) dual (C, 30) + pure_pg (PG, 20) -> explored first by DFS, extra FP/G = 15 + 15 = 30
+    //   2) pure_c (C, 20) + dual (PG, 30)  -> explored second by DFS, extra FP/G = 25 + 15 = 40
+    const dual = makePlayer({
+      playerId: 'dual',
+      fullName: 'Dual Guard Center',
+      positions: ['PG', 'C'],
+      fpg: 15.0,
+      avgLockIn: 30.0,
+      dynastyValue: 50,
+    });
+    const purePg = makePlayer({
+      playerId: 'pure-pg',
+      fullName: 'Pure PG',
+      positions: ['PG'],
+      fpg: 15.0,
+      avgLockIn: 20.0,
+      dynastyValue: 50,
+    });
+    const pureC = makePlayer({
+      playerId: 'pure-c',
+      fullName: 'Pure C',
+      positions: ['C'],
+      fpg: 25.0,
+      avgLockIn: 20.0,
+      dynastyValue: 50,
+    });
+
+    const result = solveOptimalStarting10Lineup([...lockedEight, dual, purePg, pureC]);
+    const starterIds = result.starters.map((s) => s.playerId);
+
+    expect(result.totalAvgLockIn).toBe(368);
+    expect(starterIds).toContain('dual');
+    expect(starterIds).toContain('pure-c');
+    expect(starterIds).not.toContain('pure-pg');
+    expect(result.totalFpg).toBe(278);
   });
 
   it('evaluateTrade populates avgLockIn, starting10DeltaAvgLockIn, and starting10DeltaFppg, drives Axis 2 composite grade with starting10DeltaAvgLockIn, and leads takeaways with Avg Lock-In', async () => {
