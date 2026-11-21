@@ -211,10 +211,16 @@ export interface Manager {
   avatarUrl: string | null;
 }
 
+export type LockInAvgSource = 'SLEEPER_LOCKED' | 'FALLBACK_FPG';
+
 export interface PlayerSeasonMetrics {
   gamesPlayed: number;
   totalMbaPoints: number;
   mbaFantasyPointsPerGame: number;
+  averageLockInPoints: number;
+  lockInWeeksCount: number;
+  totalLockInPoints: number;
+  lockInAvgSource: LockInAvgSource;
   ptsPerGame: number;
   rebPerGame: number;
   astPerGame: number;
@@ -364,6 +370,8 @@ export interface HydratedRoster {
   currentWeekProjectedPoints: number;
   currentWeekMatchupId: number | null;
   starterTotalFpg: number;
+  starterTotalAvgLockIn: number;
+  averageWeeklyMatchupPoints: number | null;
   lineupOptimization: RosterLineupOptimization;
   stagedChecklist: StagedLineupChecklist;
 }
@@ -374,6 +382,7 @@ export interface MbaLeagueSnapshot {
   season: string;
   currentWeek: number;
   currentLeg: number;
+  completedWeeksCount: number;
   scoringSettings: MbaScoringSettings;
   starterSlotTemplate: readonly StarterSlotType[];
   managers: Manager[];
@@ -475,6 +484,7 @@ export interface SleeperLeagueBundle {
   users: SleeperUser[];
   rosters: SleeperRoster[];
   matchups: SleeperMatchup[];
+  historicalMatchups?: Record<number, SleeperMatchup[]>;
   tradedPicks: SleeperTradedPick[];
   transactions?: SleeperTransaction[];
   players: Record<string, SleeperPlayer>;

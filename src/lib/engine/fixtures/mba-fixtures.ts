@@ -1,8 +1,10 @@
+import { computeMbaPoints } from '../../scoring/mba-scoring';
 import {
   DEFAULT_MBA_SCORING_SETTINGS,
   MBA_LEAGUE_ID_2025,
   MBA_LEAGUE_ID_2026,
   SleeperLeagueBundle,
+  SleeperMatchup,
   SleeperPlayer,
   SleeperTransaction,
 } from '../../types/mba';
@@ -508,6 +510,60 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
     };
   });
 
+  // Deterministic completed weekly matchups for Weeks 1–4 (before active Week 5)
+  // Models realistic Lock-In lift over raw FP/G, a 0-point DNP week (Booker '1648' in Wk 3,
+  // Holmgren '1713' in Wks 3–4), and a 0-week FALLBACK_FPG player (Ja Morant '2458' on IR).
+  const fpgByPlayerId = new Map<string, number>();
+  for (const entry of seasonStats) {
+    const gp = entry.stats.gp && entry.stats.gp > 0 ? entry.stats.gp : 10;
+    const total = computeMbaPoints(entry.stats, DEFAULT_MBA_SCORING_SETTINGS);
+    fpgByPlayerId.set(entry.player_id, total / gp);
+  }
+
+  const weekLiftFactors = [1.18, 1.24, 1.15, 1.23];
+  const historicalMatchups: Record<number, SleeperMatchup[]> = {};
+
+  for (let week = 1; week <= 4; week++) {
+    const lift = weekLiftFactors[week - 1];
+    historicalMatchups[week] = rosters.map((r, idx) => {
+      const playersPoints: Record<string, number> = {};
+      for (const [pIdx, pid] of r.players.entries()) {
+        if (pid === '2458') {
+          // Ja Morant on IR all 4 weeks -> 0 completed lock-in weeks (FALLBACK_FPG)
+          playersPoints[pid] = 0;
+          continue;
+        }
+        if (pid === '1648' && week === 3) {
+          // Devin Booker DNP in Week 3 -> excluded from Lock-In average (3 active weeks)
+          playersPoints[pid] = 0;
+          continue;
+        }
+        if (pid === '1713' && week >= 3) {
+          // Chet Holmgren injured in Weeks 3–4 -> excluded (2 active weeks)
+          playersPoints[pid] = 0;
+          continue;
+        }
+        const baseFpg = fpgByPlayerId.get(pid) ?? 20;
+        const variance = ((pIdx + week) % 3 - 1) * 1.5;
+        playersPoints[pid] = Math.round(Math.max(5, baseFpg * lift + variance) * 10) / 10;
+      }
+
+      const startersPoints = r.starters.map((pid) => playersPoints[pid] ?? 0);
+      const totalPoints =
+        Math.round(startersPoints.reduce((sum, pts) => sum + pts, 0) * 10) / 10;
+
+      return {
+        roster_id: r.roster_id,
+        matchup_id: ((idx + week) % 5) + 1,
+        points: totalPoints,
+        starters: r.starters,
+        starters_points: startersPoints,
+        players: r.players,
+        players_points: playersPoints,
+      };
+    });
+  }
+
   const weeklyStats = [
     // Nikola Jokic (1511): Game 1 = 54.0 FP (locked), Game 2 = 37.0 FP
     {
@@ -749,6 +805,7 @@ export function createDeterministicMbaFixtures(): SleeperLeagueBundle {
     users,
     rosters,
     matchups,
+    historicalMatchups,
     tradedPicks: [
       { season: '2026', round: 1, roster_id: 3, owner_id: 5, previous_owner_id: 3 },
       { season: '2026', round: 2, roster_id: 4, owner_id: 3, previous_owner_id: 4 },
