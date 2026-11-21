@@ -720,7 +720,7 @@ function PlayerSlotRow({
           </div>
         </div>
 
-        {/* Right side: Lock-In Threshold, Effective Weekly Score & Custom MBA FP/G */}
+        {/* Right side: Lock-In Threshold, Effective Weekly Score & Average Lock-In Score */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/60 pt-2.5 sm:justify-end sm:border-t-0 sm:pt-0">
           {lockIn.canToggleManualLock && (
             <button
@@ -775,15 +775,22 @@ function PlayerSlotRow({
             </div>
           </div>
 
-          <div className="min-w-[88px] rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-right">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-orange-300">
-              MBA FP/G
+          <div
+            data-testid={`avg-lock-in-box-${slot.playerId}`}
+            className="min-w-[116px] shrink-0 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-right"
+          >
+            <div className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wider text-orange-300">
+              AVG LOCK-IN
             </div>
-            <div className="font-mono text-base font-extrabold text-white">
-              {m.mbaFantasyPointsPerGame.toFixed(1)}
+            <div
+              data-testid={`avg-lock-in-score-${slot.playerId}`}
+              className="font-mono text-base font-extrabold text-white"
+            >
+              {m.averageLockInPoints.toFixed(1)}
             </div>
-            <div className="font-mono text-[10px] text-orange-200/70">
-              {m.totalMbaPoints.toFixed(1)} tot
+            <div className="whitespace-nowrap font-mono text-[10px] text-orange-200/80">
+              FP/G: {m.mbaFantasyPointsPerGame.toFixed(1)} •{' '}
+              {m.lockInAvgSource === 'FALLBACK_FPG' ? 'FP/G est.' : `${m.lockInWeeksCount}w`}
             </div>
           </div>
         </div>
@@ -1006,12 +1013,17 @@ export function RosterOverview() {
             <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-2.5">
               <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
-                <span>Starting 10 FP/G</span>
+                <span>Starting 10 Avg Lock-In</span>
               </div>
-              <div className="mt-1 font-mono text-lg font-extrabold text-emerald-300">
-                {activeRoster.starterTotalFpg.toFixed(1)}
+              <div
+                data-testid="hero-starting-10-avg-lock-in"
+                className="mt-1 font-mono text-lg font-extrabold text-emerald-300"
+              >
+                {activeRoster.starterTotalAvgLockIn.toFixed(1)}
               </div>
-              <div className="text-[11px] text-slate-500">Custom MBA Scoring</div>
+              <div className="text-[11px] text-slate-500">
+                Raw FP/G: {activeRoster.starterTotalFpg.toFixed(1)}
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-2.5">
@@ -1035,7 +1047,18 @@ export function RosterOverview() {
               <div className="mt-1 font-mono text-lg font-extrabold text-white">
                 {activeRoster.standing.fpts.toFixed(1)}
               </div>
-              <div className="text-[11px] text-slate-500">
+              <div
+                data-testid="hero-season-total-subtext"
+                className="text-[11px] text-slate-500"
+              >
+                {activeRoster.averageWeeklyMatchupPoints !== null ? (
+                  <>
+                    <span className="font-mono text-amber-300/90">
+                      Avg/Wk: {activeRoster.averageWeeklyMatchupPoints.toFixed(1)}
+                    </span>
+                    {' • '}
+                  </>
+                ) : null}
                 PA: {activeRoster.standing.fptsAgainst.toFixed(1)}
               </div>
             </div>
