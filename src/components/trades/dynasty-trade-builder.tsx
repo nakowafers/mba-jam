@@ -714,31 +714,35 @@ export function DynastyTradeBuilder({
 
                   <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-2.5">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Starting 10 Δ FP/G
+                      Starting 10 Δ Avg Lock-In
                     </div>
                     <div
                       data-testid={`starting10-delta-${part.rosterId}`}
                       className={`mt-0.5 flex items-center gap-1 font-mono text-base font-black ${
-                        part.starting10DeltaFppg > 0
+                        part.starting10DeltaAvgLockIn > 0
                           ? 'text-emerald-400'
-                          : part.starting10DeltaFppg < 0
+                          : part.starting10DeltaAvgLockIn < 0
                             ? 'text-rose-400'
                             : 'text-slate-200'
                       }`}
                     >
-                      {part.starting10DeltaFppg > 0 ? (
+                      {part.starting10DeltaAvgLockIn > 0 ? (
                         <TrendingUp className="h-3.5 w-3.5" />
-                      ) : part.starting10DeltaFppg < 0 ? (
+                      ) : part.starting10DeltaAvgLockIn < 0 ? (
                         <TrendingDown className="h-3.5 w-3.5" />
                       ) : null}
                       <span>
-                        {part.starting10DeltaFppg > 0 ? '+' : ''}
-                        {part.starting10DeltaFppg.toFixed(1)}
+                        {part.starting10DeltaAvgLockIn > 0 ? '+' : ''}
+                        {part.starting10DeltaAvgLockIn.toFixed(1)}
                       </span>
                     </div>
                     <div className="text-[10px] text-slate-500">
-                      {part.preTradeOptimalStarterFpg.toFixed(1)} →{' '}
-                      {part.postTradeOptimalStarterFpg.toFixed(1)}
+                      {part.preTradeOptimalStarterAvgLockIn.toFixed(1)} →{' '}
+                      {part.postTradeOptimalStarterAvgLockIn.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      FP/G Δ: {part.starting10DeltaFppg > 0 ? '+' : ''}
+                      {part.starting10DeltaFppg.toFixed(1)}
                     </div>
                   </div>
 
@@ -794,7 +798,7 @@ export function DynastyTradeBuilder({
                           <div>
                             <div className="font-bold text-white">{p.fullName}</div>
                             <div className="text-[11px] text-slate-400">
-                              {p.positions.join('/')} • Age {p.age ?? '—'} • {p.fpg.toFixed(1)} FP/G • from Roster #{p.fromRosterId}
+                              {p.positions.join('/')} • Age {p.age ?? '—'} • {p.avgLockIn.toFixed(1)} Avg LI • {p.fpg.toFixed(1)} FP/G • from Roster #{p.fromRosterId}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1127,6 +1131,7 @@ function RosterAssetPicker({
                   </div>
                   <div className="mt-0.5 text-[11px] text-slate-400">
                     {player.positions.join('/')} • Age {player.age ?? '—'} •{' '}
+                    {player.seasonMetrics.averageLockInPoints.toFixed(1)} Avg LI •{' '}
                     {player.seasonMetrics.mbaFantasyPointsPerGame.toFixed(1)} FP/G
                   </div>
                 </div>

@@ -482,26 +482,30 @@ export function CompletedTradeGrader({
 
                           <div className="rounded-lg border border-slate-800/90 bg-slate-900/90 px-3 py-2">
                             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                              Starting 10 Δ FP/G
+                              Starting 10 Δ Avg Lock-In
                             </div>
                             <div
                               className={`mt-0.5 flex items-center gap-1 font-mono text-sm font-black ${
-                                part.starting10DeltaFppg > 0
+                                part.starting10DeltaAvgLockIn > 0
                                   ? 'text-emerald-400'
-                                  : part.starting10DeltaFppg < 0
+                                  : part.starting10DeltaAvgLockIn < 0
                                     ? 'text-rose-400'
                                     : 'text-slate-200'
                               }`}
                             >
-                              {part.starting10DeltaFppg > 0 ? (
+                              {part.starting10DeltaAvgLockIn > 0 ? (
                                 <TrendingUp className="h-3.5 w-3.5" />
-                              ) : part.starting10DeltaFppg < 0 ? (
+                              ) : part.starting10DeltaAvgLockIn < 0 ? (
                                 <TrendingDown className="h-3.5 w-3.5" />
                               ) : null}
                               <span>
-                                {part.starting10DeltaFppg > 0 ? '+' : ''}
-                                {part.starting10DeltaFppg.toFixed(1)} FP/G
+                                {part.starting10DeltaAvgLockIn > 0 ? '+' : ''}
+                                {part.starting10DeltaAvgLockIn.toFixed(1)} Avg LI
                               </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              FP/G Δ: {part.starting10DeltaFppg > 0 ? '+' : ''}
+                              {part.starting10DeltaFppg.toFixed(1)}
                             </div>
                           </div>
                         </div>
@@ -529,7 +533,7 @@ export function CompletedTradeGrader({
                                     <span className="font-bold text-white">{p.fullName}</span>
                                     <span className="ml-1.5 text-[11px] text-slate-400">
                                       ({p.positions.join('/')} • {p.nbaTeam} • Age {p.age ?? '—'} •{' '}
-                                      {p.fpg.toFixed(1)} FP/G)
+                                      {p.avgLockIn.toFixed(1)} Avg LI • {p.fpg.toFixed(1)} FP/G)
                                     </span>
                                   </div>
                                   <span className="shrink-0 rounded bg-orange-500/15 px-2 py-0.5 font-mono text-xs font-bold text-orange-300">
@@ -625,7 +629,7 @@ export function CompletedTradeGrader({
                     <span className="flex items-center gap-2">
                       <Sparkles className="h-3.5 w-3.5 text-orange-400" />
                       <span>
-                        Adjusted Dynasty Value &amp; Starting 10 Δ FP/G Breakdown (Consolidation
+                        Adjusted Dynasty Value &amp; Starting 10 Δ Avg Lock-In Breakdown (Consolidation
                         Premium, Replacement Cut Assets &amp; Takeaways)
                       </span>
                     </span>
@@ -680,9 +684,13 @@ export function CompletedTradeGrader({
                               </div>
                             </div>
                             <div className="rounded bg-slate-950 p-2">
-                              <div className="text-slate-400">Optimal 10 FP/G</div>
+                              <div className="text-slate-400">Optimal 10 Avg LI</div>
                               <div className="font-bold text-sky-300">
-                                {part.preTradeOptimalStarterFpg.toFixed(1)} →{' '}
+                                {part.preTradeOptimalStarterAvgLockIn.toFixed(1)} →{' '}
+                                {part.postTradeOptimalStarterAvgLockIn.toFixed(1)}
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                FP/G: {part.preTradeOptimalStarterFpg.toFixed(1)} →{' '}
                                 {part.postTradeOptimalStarterFpg.toFixed(1)}
                               </div>
                             </div>

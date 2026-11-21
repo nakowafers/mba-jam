@@ -674,6 +674,7 @@ export interface EvaluatedTradePlayerAsset extends FlippedAssetMetadata {
   positions: string[];
   age: number | null;
   fpg: number;
+  avgLockIn: number;
   dynastyValue: number;
   consolidationPremium: number;
   fromRosterId: number;
@@ -703,6 +704,7 @@ export interface OptimalStarterAssignmentSlot {
   fullName: string;
   positions: string[];
   fpg: number;
+  avgLockIn: number;
 }
 
 export interface TradeParticipantEvaluation {
@@ -726,6 +728,9 @@ export interface TradeParticipantEvaluation {
   preTradeOptimalStarterFpg: number;
   postTradeOptimalStarterFpg: number;
   starting10DeltaFppg: number;
+  preTradeOptimalStarterAvgLockIn: number;
+  postTradeOptimalStarterAvgLockIn: number;
+  starting10DeltaAvgLockIn: number;
   preTradeOptimalStarters: OptimalStarterAssignmentSlot[];
   postTradeOptimalStarters: OptimalStarterAssignmentSlot[];
   preTradeAverageAge: number;
