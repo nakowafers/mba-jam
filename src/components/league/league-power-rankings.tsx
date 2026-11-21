@@ -222,7 +222,7 @@ export function LeaguePowerRankingsView() {
               <span>10-Team MBA Dynasty Power Rankings</span>
             </h2>
             <p className="text-xs text-slate-400">
-              Comparing Contender Score (Starting 10 MBA FP/G), Under-25 Young Core Value, and 2026–2029 Draft Pick Capital
+              Comparing Contender Score (Starting 10 Avg Lock-In), Under-25 Young Core Value, and 2026–2029 Draft Pick Capital
             </p>
           </div>
 
@@ -275,7 +275,7 @@ export function LeaguePowerRankingsView() {
                 <th className="px-4 py-3.5">MBA Roster & Manager</th>
                 <th className="px-4 py-3.5">Archetype</th>
                 <th className="px-4 py-3.5 text-right">Overall Dynasty Power</th>
-                <th className="px-4 py-3.5 text-right">Contender Score (Start 10 FP/G)</th>
+                <th className="px-4 py-3.5 text-right">Contender Score (Starting 10 Avg Lock-In)</th>
                 <th className="px-4 py-3.5 text-right">Young Core (&lt;25 Dynasty Val)</th>
                 <th className="px-4 py-3.5 text-right">2026–2029 Draft Pick Capital</th>
               </tr>
@@ -342,10 +342,10 @@ export function LeaguePowerRankingsView() {
 
                     <td className="px-4 py-3.5 text-right">
                       <div className="font-mono text-sm font-bold text-emerald-300">
-                        {row.contenderScore.toFixed(1)} FP/G
+                        {row.contenderScore.toFixed(1)} Avg LI
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        Rank #{row.contenderRank}
+                        FP/G: {row.starterTotalFpg.toFixed(1)} • Rank #{row.contenderRank}
                       </div>
                     </td>
 
@@ -555,6 +555,7 @@ export function LeaguePowerRankingsView() {
                 </div>
                 <div className="mt-1 truncate text-[11px] text-slate-500">
                   Roster #{roster.rosterId} {roster.manager.rosterName} •{' '}
+                  {player.seasonMetrics.averageLockInPoints.toFixed(1)} Avg LI •{' '}
                   {player.seasonMetrics.mbaFantasyPointsPerGame.toFixed(1)} FP/G
                 </div>
               </div>

@@ -357,7 +357,7 @@ export function resolveDraftPickMatrix(params: {
 }
 
 /**
- * Evaluates all 10 MBA Rosters across Overall Dynasty Power, Contender Score (Starting 10 MBA FP/G),
+ * Evaluates all 10 MBA Rosters across Overall Dynasty Power, Contender Score (Starting 10 Avg Lock-In),
  * Dynasty Core Score (Top 10 players' Dynasty Value), Young Core Value (Under-25 Dynasty Value),
  * and Draft Pick Capital (2026–2029 Draft Pick Asset sum), assigning each Roster an Archetype tag.
  */
@@ -369,7 +369,7 @@ export function computeLeaguePowerRankings(params: {
   const pickRowByRosterId = new Map(pickMatrix.rows.map((r) => [r.rosterId, r]));
 
   const rawMetrics = rosters.map((roster) => {
-    const contenderScore = roster.starterTotalFpg;
+    const contenderScore = roster.starterTotalAvgLockIn;
     const sortedByDynasty = [...roster.allPlayers].sort((a, b) => b.dynastyValue - a.dynastyValue);
     const top10DynastySum = sortedByDynasty
       .slice(0, 10)
@@ -385,10 +385,10 @@ export function computeLeaguePowerRankings(params: {
     const ownedSecondRoundPicksCount = pickRow?.secondRoundCount ?? 0;
 
     // Normalize components onto a 0–100 Overall Dynasty Power scale:
-    // - Contender component (0–40 pts): starterTotalFpg / 350 * 40
-    // - Dynasty Core & Young Core component (0–40 pts): (dynastyCoreScore / 750 * 25) + (youngCoreValue / 600 * 15)
-    // - Draft Pick Capital component (0–20 pts): draftPickCapital / 350 * 20
-    const contenderComp = Math.min(40, (contenderScore / 340) * 40);
+    // - Contender component (0–40 pts): starterTotalAvgLockIn / 400 * 40
+    // - Dynasty Core & Young Core component (0–40 pts): (dynastyCoreScore / 720 * 25) + (youngCoreValue / 550 * 15)
+    // - Draft Pick Capital component (0–20 pts): draftPickCapital / 340 * 20
+    const contenderComp = Math.min(40, (contenderScore / 400) * 40);
     const coreComp =
       Math.min(25, (dynastyCoreScore / 720) * 25) + Math.min(15, (youngCoreValue / 550) * 15);
     const pickComp = Math.min(20, (draftPickCapital / 340) * 20);
@@ -405,6 +405,8 @@ export function computeLeaguePowerRankings(params: {
       fpts: roster.standing.fpts,
       overallDynastyPower,
       contenderScore,
+      starterTotalAvgLockIn: roster.starterTotalAvgLockIn,
+      starterTotalFpg: roster.starterTotalFpg,
       dynastyCoreScore,
       youngCoreValue,
       under25PlayerCount: under25Players.length,

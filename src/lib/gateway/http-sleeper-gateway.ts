@@ -20,6 +20,9 @@ let cachedPlayersDict: Record<string, SleeperPlayer> | null = null;
 let cachedPlayersTimestamp = 0;
 const PLAYERS_TTL_MS = 60 * 60 * 1000;
 
+// Cache immutable completed weekly matchups in server memory keyed by `${leagueId}:${leg}`
+const cachedCompletedMatchups = new Map<string, SleeperMatchup[]>();
+
 async function fetchJson<T>(url: string, forceRefresh?: boolean): Promise<T> {
   const res = await fetch(url, {
     cache: forceRefresh ? 'no-store' : 'default',
@@ -69,6 +72,7 @@ export class HttpSleeperGateway implements SleeperGateway {
 
       const [
         matchups,
+        historicalMatchups,
         seasonStatsRaw,
         weeklyStatsRaw,
         weeklyProjRaw,
@@ -79,6 +83,7 @@ export class HttpSleeperGateway implements SleeperGateway {
           `https://api.sleeper.app/v1/league/${this.leagueId}/matchups/${activeLeg}`,
           force
         ),
+        this.fetchCompletedMatchups(this.leagueId, activeLeg, force),
         fetchJson<SleeperGameStatEntry[]>(
           `https://api.sleeper.com/stats/nba/${season}?season_type=regular`,
           force
@@ -130,6 +135,7 @@ export class HttpSleeperGateway implements SleeperGateway {
         users,
         rosters,
         matchups,
+        historicalMatchups,
         tradedPicks,
         transactions: historicalTransactions,
         players,
@@ -187,6 +193,47 @@ export class HttpSleeperGateway implements SleeperGateway {
     } catch {
       return createDeterministicMbaFixtures().transactions ?? [];
     }
+  }
+
+  private async fetchCompletedMatchups(
+    leagueId: string,
+    activeLeg: number,
+    forceRefresh?: boolean
+  ): Promise<Record<number, SleeperMatchup[]>> {
+    if (activeLeg <= 1) {
+      return {};
+    }
+
+    const completedLegs = Array.from({ length: activeLeg - 1 }, (_, i) => i + 1);
+    const entries = await Promise.all(
+      completedLegs.map(async (leg): Promise<[number, SleeperMatchup[]]> => {
+        const cacheKey = `${leagueId}:${leg}`;
+        if (!forceRefresh) {
+          const cached = cachedCompletedMatchups.get(cacheKey);
+          if (cached) {
+            return [leg, cached];
+          }
+        }
+        try {
+          const data = await fetchJson<SleeperMatchup[]>(
+            `https://api.sleeper.app/v1/league/${leagueId}/matchups/${leg}`,
+            forceRefresh
+          );
+          if (Array.isArray(data) && data.length > 0) {
+            cachedCompletedMatchups.set(cacheKey, data);
+          }
+          return [leg, Array.isArray(data) ? data : []];
+        } catch {
+          return [leg, []];
+        }
+      })
+    );
+
+    const historicalMatchups: Record<number, SleeperMatchup[]> = {};
+    for (const [leg, data] of entries) {
+      historicalMatchups[leg] = data;
+    }
+    return historicalMatchups;
   }
 
   private async getPlayersDictionary(): Promise<Record<string, SleeperPlayer>> {

@@ -5,7 +5,13 @@ import {
   evaluatePlayerLockIn,
 } from '../lineup/lock-in-advisor';
 import { evaluateRosterLineupOptimization } from '../lineup/slot-optimizer';
-import { computeMbaPoints, computeSeasonMetrics } from '../scoring/mba-scoring';
+import {
+  computeMbaPoints,
+  computePlayerLockInHistoryMap,
+  computeRosterWeeklyMatchupAverages,
+  computeSeasonMetrics,
+  countCompletedMatchupWeeks,
+} from '../scoring/mba-scoring';
 import {
   computeLeaguePowerRankings,
   computePlayerDynastyValue,
@@ -487,6 +493,12 @@ export class MbaLeagueEngine {
     const matchupByRosterId = new Map(bundle.matchups.map((m) => [m.roster_id, m]));
     const countMap = getStoreGameCountMap(this.stateStore);
 
+    const lockInHistoryByPlayerId = computePlayerLockInHistoryMap(bundle.historicalMatchups);
+    const completedWeeksCount = countCompletedMatchupWeeks(bundle.historicalMatchups);
+    const weeklyMatchupAverageByRosterId = computeRosterWeeklyMatchupAverages(
+      bundle.historicalMatchups
+    );
+
     // Index season stats by player_id
     const seasonStatByPlayerId = new Map<string, SleeperGameStatEntry>();
     for (const entry of bundle.seasonStats) {
@@ -545,7 +557,11 @@ export class MbaLeagueEngine {
       const age = pInfo?.age ?? null;
       const yearsExp = pInfo?.years_exp ?? fallbackPlayer?.years_exp ?? null;
 
-      const seasonMetrics = computeSeasonMetrics(seasonEntry?.stats, scoringSettings);
+      const seasonMetrics = computeSeasonMetrics(
+        seasonEntry?.stats,
+        scoringSettings,
+        lockInHistoryByPlayerId.get(playerId)
+      );
       const completedEntries = weeklyCompletedByPlayerId.get(playerId) ?? [];
       const projectionEntries = weeklyProjByPlayerId.get(playerId) ?? [];
 
@@ -746,6 +762,14 @@ export class MbaLeagueEngine {
           starterSlots.reduce((sum, s) => sum + s.seasonMetrics.mbaFantasyPointsPerGame, 0) * 10
         ) / 10;
 
+      const starterTotalAvgLockIn =
+        Math.round(
+          starterSlots.reduce((sum, s) => sum + s.seasonMetrics.averageLockInPoints, 0) * 10
+        ) / 10;
+
+      const averageWeeklyMatchupPoints =
+        weeklyMatchupAverageByRosterId.get(rawRoster.roster_id) ?? null;
+
       const rawMatchupPoints = matchup ? Math.round(matchup.points * 100) / 100 : 0;
       const startersEffectiveSum = starterSlots.reduce(
         (sum, s) => sum + s.effectiveWeeklyScore,
@@ -785,6 +809,8 @@ export class MbaLeagueEngine {
         currentWeekProjectedPoints,
         currentWeekMatchupId: matchup?.matchup_id ?? null,
         starterTotalFpg,
+        starterTotalAvgLockIn,
+        averageWeeklyMatchupPoints,
         lineupOptimization: null as unknown as RosterLineupOptimization,
         stagedChecklist: null as unknown as StagedLineupChecklist,
       });
@@ -856,6 +882,7 @@ export class MbaLeagueEngine {
       season: bundle.league.season || bundle.nbaState.season || '2026',
       currentWeek,
       currentLeg,
+      completedWeeksCount,
       scoringSettings,
       starterSlotTemplate: MBA_STARTER_SLOTS,
       managers,

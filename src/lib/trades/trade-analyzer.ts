@@ -22,13 +22,14 @@ import {
 
 /**
  * Solves the exact maximum-weight 10-starter lineup across ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'C', 'UTIL', 'UTIL']
- * maximizing season/projected MBA FP/G.
+ * maximizing Average Lock-In Score (with MBA FP/G and Dynasty Value tiebreakers).
  */
 export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
+  totalAvgLockIn: number;
   totalFpg: number;
   starters: OptimalStarterAssignmentSlot[];
 } {
-  // Deduplicate players by playerId and sort descending by MBA FP/G
+  // Deduplicate players by playerId and sort descending by Average Lock-In Score, then FP/G, then Dynasty Value
   const uniqueMap = new Map<string, RosterPlayerSlot>();
   for (const p of players) {
     if (!p.playerId || p.playerId === '0') continue;
@@ -38,6 +39,7 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
   }
   const pool = [...uniqueMap.values()].sort(
     (a, b) =>
+      b.seasonMetrics.averageLockInPoints - a.seasonMetrics.averageLockInPoints ||
       b.seasonMetrics.mbaFantasyPointsPerGame - a.seasonMetrics.mbaFantasyPointsPerGame ||
       b.dynastyValue - a.dynastyValue
   );
@@ -69,7 +71,9 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
 
   const used = new Array<boolean>(pool.length).fill(false);
   const currentAssignment = new Array<number>(slotSearchOrder.length).fill(-1);
-  let bestScore = -1;
+  let bestScore = -Infinity;
+  let bestFpgSum = -Infinity;
+  let bestDynastySum = -Infinity;
   let bestAssignment = new Array<number>(slotSearchOrder.length).fill(-1);
 
   function computeUpperBound(step: number, currentSum: number): number {
@@ -79,23 +83,41 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
     let bound = currentSum;
     for (let i = 0; i < pool.length && added < remainingSlots; i++) {
       if (!used[i]) {
-        bound += pool[i].seasonMetrics.mbaFantasyPointsPerGame;
+        bound += Math.max(0, pool[i].seasonMetrics.averageLockInPoints);
         added++;
       }
     }
     return bound;
   }
 
-  function dfs(step: number, currentSum: number): void {
+  function dfs(
+    step: number,
+    currentSum: number,
+    currentFpgSum: number,
+    currentDynastySum: number
+  ): void {
     if (step === slotSearchOrder.length) {
-      if (currentSum > bestScore) {
+      const scoreDiff = currentSum - bestScore;
+      const isBetterScore = scoreDiff > 1e-6;
+      const isTiedScore = Math.abs(scoreDiff) <= 1e-6;
+      const fpgDiff = currentFpgSum - bestFpgSum;
+      const isBetterFpg = fpgDiff > 1e-6;
+      const isTiedFpg = Math.abs(fpgDiff) <= 1e-6;
+      const isBetterDynasty = currentDynastySum > bestDynastySum + 1e-6;
+
+      if (
+        isBetterScore ||
+        (isTiedScore && (isBetterFpg || (isTiedFpg && isBetterDynasty)))
+      ) {
         bestScore = currentSum;
+        bestFpgSum = currentFpgSum;
+        bestDynastySum = currentDynastySum;
         bestAssignment = [...currentAssignment];
       }
       return;
     }
 
-    if (computeUpperBound(step, currentSum) <= bestScore + 1e-6) {
+    if (computeUpperBound(step, currentSum) < bestScore - 1e-6) {
       return;
     }
 
@@ -106,7 +128,13 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
       triedAny = true;
       used[pIdx] = true;
       currentAssignment[step] = pIdx;
-      dfs(step + 1, currentSum + pool[pIdx].seasonMetrics.mbaFantasyPointsPerGame);
+      const p = pool[pIdx];
+      dfs(
+        step + 1,
+        currentSum + p.seasonMetrics.averageLockInPoints,
+        currentFpgSum + p.seasonMetrics.mbaFantasyPointsPerGame,
+        currentDynastySum + p.dynastyValue
+      );
       used[pIdx] = false;
       currentAssignment[step] = -1;
     }
@@ -114,11 +142,11 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
     // In case a slot has no eligible unused candidate (e.g. depleted position), allow leaving slot empty
     if (!triedAny) {
       currentAssignment[step] = -1;
-      dfs(step + 1, currentSum);
+      dfs(step + 1, currentSum, currentFpgSum, currentDynastySum);
     }
   }
 
-  dfs(0, 0);
+  dfs(0, 0, 0, 0);
 
   // Map back into canonical MBA_STARTER_SLOTS order (indices 0..9)
   const byOriginalSlot = new Map<number, OptimalStarterAssignmentSlot>();
@@ -134,6 +162,7 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
         fullName: p.fullName,
         positions: p.positions,
         fpg: p.seasonMetrics.mbaFantasyPointsPerGame,
+        avgLockIn: p.seasonMetrics.averageLockInPoints,
       });
     } else {
       byOriginalSlot.set(slotIndex, {
@@ -143,15 +172,19 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
         fullName: 'Empty Slot',
         positions: [slotType],
         fpg: 0,
+        avgLockIn: 0,
       });
     }
   }
 
   const starters: OptimalStarterAssignmentSlot[] = MBA_STARTER_SLOTS.map((_, idx) => byOriginalSlot.get(idx)!);
+  const totalAvgLockIn =
+    Math.round(starters.reduce((sum, s) => sum + s.avgLockIn, 0) * 10) / 10;
   const totalFpg =
     Math.round(starters.reduce((sum, s) => sum + s.fpg, 0) * 10) / 10;
 
   return {
+    totalAvgLockIn,
     totalFpg,
     starters,
   };
@@ -305,9 +338,9 @@ export function normalizeTradeParticipants(
 }
 
 /**
- * Evaluates a 2-team or 3-team Dynasty Trade Proposal across both ADR-0002 axes:
+ * Evaluates a 2-team or 3-team Dynasty Trade Proposal across both ADR-0002 / ADR-0003 axes:
  * (1) Adjusted Package Dynasty Value (with Consolidation Premium for elite cornerstones and Replacement Cut Asset deductions)
- * (2) Starting 10 Δ FP/G (solving pre-trade and post-trade optimal 10-starter lineups)
+ * (2) Starting 10 Δ Avg Lock-In (solving pre-trade and post-trade optimal 10-starter lineups by Average Lock-In Score, with raw FP/G retained as secondary context)
  */
 export function evaluateDynastyTrade(params: {
   proposal: TradeProposal;
@@ -405,6 +438,7 @@ export function evaluateDynastyTrade(params: {
         positions: slot.positions,
         age: slot.age,
         fpg: slot.seasonMetrics.mbaFantasyPointsPerGame,
+        avgLockIn: slot.seasonMetrics.averageLockInPoints,
         dynastyValue: slot.dynastyValue,
         consolidationPremium: computeSingleAssetConsolidationBonus(slot.dynastyValue),
         fromRosterId,
@@ -624,6 +658,10 @@ export function evaluateDynastyTrade(params: {
     const postTradeOptimalStarterFpg = postOptimal.totalFpg;
     const starting10DeltaFppg =
       Math.round((postTradeOptimalStarterFpg - preTradeOptimalStarterFpg) * 10) / 10;
+    const preTradeOptimalStarterAvgLockIn = preOptimal.totalAvgLockIn;
+    const postTradeOptimalStarterAvgLockIn = postOptimal.totalAvgLockIn;
+    const starting10DeltaAvgLockIn =
+      Math.round((postTradeOptimalStarterAvgLockIn - preTradeOptimalStarterAvgLockIn) * 10) / 10;
 
     // Average Age Delta
     const computeAvgAge = (pool: RosterPlayerSlot[]): number => {
@@ -648,14 +686,14 @@ export function evaluateDynastyTrade(params: {
       centerImpactSummary = `${centerDepthDelta} C depth (${preTradeCenterCount} → ${postTradeCenterCount} Centers) — thins 2-Center coverage${postTradeCenterCount < 2 ? ' (WARNING: fewer than 2 required Centers!)' : '.'}`;
     }
 
-    // Composite Grade Score combining Axis 1 (Adjusted Package Dynasty Value) and Axis 2 (Starting 10 Δ FP/G)
-    // When acquiring draft picks or positive Dynasty Value in a rebuild, dampen negative Starting 10 Δ FP/G
-    const fpgWeight =
-      adjustedDynastyDelta > 0 && starting10DeltaFppg < 0 && incomingPicks.length > 0
+    // Composite Grade Score combining Axis 1 (Adjusted Package Dynasty Value) and Axis 2 (Starting 10 Δ Avg Lock-In)
+    // When acquiring draft picks or positive Dynasty Value in a rebuild, dampen negative Starting 10 Δ Avg Lock-In
+    const lockInWeight =
+      adjustedDynastyDelta > 0 && starting10DeltaAvgLockIn < 0 && incomingPicks.length > 0
         ? 0.9
         : 2.2;
     const compositeGradeScore =
-      Math.round((adjustedDynastyDelta + starting10DeltaFppg * fpgWeight) * 10) / 10;
+      Math.round((adjustedDynastyDelta + starting10DeltaAvgLockIn * lockInWeight) * 10) / 10;
     const letterGrade = getTradeLetterGrade(compositeGradeScore);
 
     // Build Plain-English Takeaways
@@ -685,9 +723,10 @@ export function evaluateDynastyTrade(params: {
       );
     }
 
+    const lockInSign = starting10DeltaAvgLockIn >= 0 ? '+' : '';
     const fpgSign = starting10DeltaFppg >= 0 ? '+' : '';
     takeaways.push(
-      `Optimal Starting 10 Impact: ${fpgSign}${starting10DeltaFppg.toFixed(1)} MBA FP/G (${preTradeOptimalStarterFpg.toFixed(1)} → ${postTradeOptimalStarterFpg.toFixed(1)} FP/G).`
+      `Optimal Starting 10 Impact: ${lockInSign}${starting10DeltaAvgLockIn.toFixed(1)} Avg Lock-In (${preTradeOptimalStarterAvgLockIn.toFixed(1)} → ${postTradeOptimalStarterAvgLockIn.toFixed(1)} Avg LI; ${fpgSign}${starting10DeltaFppg.toFixed(1)} raw FP/G).`
     );
 
     if (centerDepthDelta !== 0 || incomingPlayers.some((p) => p.positions.includes('C')) || outgoingPlayers.some((p) => p.positions.includes('C'))) {
@@ -729,6 +768,9 @@ export function evaluateDynastyTrade(params: {
       preTradeOptimalStarterFpg,
       postTradeOptimalStarterFpg,
       starting10DeltaFppg,
+      preTradeOptimalStarterAvgLockIn,
+      postTradeOptimalStarterAvgLockIn,
+      starting10DeltaAvgLockIn,
       preTradeOptimalStarters: preOptimal.starters,
       postTradeOptimalStarters: postOptimal.starters,
       preTradeAverageAge,
