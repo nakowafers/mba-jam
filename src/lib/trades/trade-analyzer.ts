@@ -72,6 +72,8 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
   const used = new Array<boolean>(pool.length).fill(false);
   const currentAssignment = new Array<number>(slotSearchOrder.length).fill(-1);
   let bestScore = -Infinity;
+  let bestFpgSum = -Infinity;
+  let bestDynastySum = -Infinity;
   let bestAssignment = new Array<number>(slotSearchOrder.length).fill(-1);
 
   function computeUpperBound(step: number, currentSum: number): number {
@@ -88,16 +90,34 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
     return bound;
   }
 
-  function dfs(step: number, currentSum: number): void {
+  function dfs(
+    step: number,
+    currentSum: number,
+    currentFpgSum: number,
+    currentDynastySum: number
+  ): void {
     if (step === slotSearchOrder.length) {
-      if (currentSum > bestScore) {
+      const scoreDiff = currentSum - bestScore;
+      const isBetterScore = scoreDiff > 1e-6;
+      const isTiedScore = Math.abs(scoreDiff) <= 1e-6;
+      const fpgDiff = currentFpgSum - bestFpgSum;
+      const isBetterFpg = fpgDiff > 1e-6;
+      const isTiedFpg = Math.abs(fpgDiff) <= 1e-6;
+      const isBetterDynasty = currentDynastySum > bestDynastySum + 1e-6;
+
+      if (
+        isBetterScore ||
+        (isTiedScore && (isBetterFpg || (isTiedFpg && isBetterDynasty)))
+      ) {
         bestScore = currentSum;
+        bestFpgSum = currentFpgSum;
+        bestDynastySum = currentDynastySum;
         bestAssignment = [...currentAssignment];
       }
       return;
     }
 
-    if (computeUpperBound(step, currentSum) <= bestScore + 1e-6) {
+    if (computeUpperBound(step, currentSum) < bestScore - 1e-6) {
       return;
     }
 
@@ -108,7 +128,13 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
       triedAny = true;
       used[pIdx] = true;
       currentAssignment[step] = pIdx;
-      dfs(step + 1, currentSum + pool[pIdx].seasonMetrics.averageLockInPoints);
+      const p = pool[pIdx];
+      dfs(
+        step + 1,
+        currentSum + p.seasonMetrics.averageLockInPoints,
+        currentFpgSum + p.seasonMetrics.mbaFantasyPointsPerGame,
+        currentDynastySum + p.dynastyValue
+      );
       used[pIdx] = false;
       currentAssignment[step] = -1;
     }
@@ -116,11 +142,11 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
     // In case a slot has no eligible unused candidate (e.g. depleted position), allow leaving slot empty
     if (!triedAny) {
       currentAssignment[step] = -1;
-      dfs(step + 1, currentSum);
+      dfs(step + 1, currentSum, currentFpgSum, currentDynastySum);
     }
   }
 
-  dfs(0, 0);
+  dfs(0, 0, 0, 0);
 
   // Map back into canonical MBA_STARTER_SLOTS order (indices 0..9)
   const byOriginalSlot = new Map<number, OptimalStarterAssignmentSlot>();

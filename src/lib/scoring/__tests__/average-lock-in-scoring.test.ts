@@ -273,6 +273,37 @@ describe('MbaLeagueEngine — Average Lock-In hydration & deterministic fixtures
     expect(roster2.averageWeeklyMatchupPoints).toBeNull();
   });
 
+  it('excludes empty or failed legs ([]) from completedWeeksCount while averaging populated weeks', () => {
+    const bundle = createDeterministicMbaFixtures();
+    bundle.historicalMatchups = {
+      1: [
+        makeMatchup({
+          roster_id: 1,
+          points: 300.0,
+          starters: ['1511'],
+          players: ['1511'],
+          players_points: { '1511': 55.0 },
+        }),
+      ],
+      2: [], // Failed or empty leg fetch — must NOT count toward completedWeeksCount
+      3: [
+        makeMatchup({
+          roster_id: 1,
+          points: 340.0,
+          starters: ['1511'],
+          players: ['1511'],
+          players_points: { '1511': 65.0 },
+        }),
+      ],
+    };
+
+    const engine = createEngineWithBundle(bundle);
+    const snapshot = engine.buildSnapshotFromBundle(bundle, 1);
+
+    expect(snapshot.completedWeeksCount).toBe(2);
+    expect(snapshot.activeRoster.averageWeeklyMatchupPoints).toBe(320);
+  });
+
   it('sets completedWeeksCount to 0 and averageWeeklyMatchupPoints to null when historicalMatchups is empty', () => {
     const bundle = createDeterministicMbaFixtures();
     bundle.historicalMatchups = {};

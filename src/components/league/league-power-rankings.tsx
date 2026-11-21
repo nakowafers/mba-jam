@@ -222,7 +222,7 @@ export function LeaguePowerRankingsView() {
               <span>10-Team MBA Dynasty Power Rankings</span>
             </h2>
             <p className="text-xs text-slate-400">
-              Comparing Contender Score (Start 10 Avg Lock-In), Under-25 Young Core Value, and 2026–2029 Draft Pick Capital
+              Comparing Contender Score (Starting 10 Avg Lock-In), Under-25 Young Core Value, and 2026–2029 Draft Pick Capital
             </p>
           </div>
 
@@ -275,7 +275,7 @@ export function LeaguePowerRankingsView() {
                 <th className="px-4 py-3.5">MBA Roster & Manager</th>
                 <th className="px-4 py-3.5">Archetype</th>
                 <th className="px-4 py-3.5 text-right">Overall Dynasty Power</th>
-                <th className="px-4 py-3.5 text-right">Contender Score (Start 10 Avg Lock-In)</th>
+                <th className="px-4 py-3.5 text-right">Contender Score (Starting 10 Avg Lock-In)</th>
                 <th className="px-4 py-3.5 text-right">Young Core (&lt;25 Dynasty Val)</th>
                 <th className="px-4 py-3.5 text-right">2026–2029 Draft Pick Capital</th>
               </tr>

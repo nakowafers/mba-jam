@@ -69,6 +69,46 @@ export function computePlayerLockInHistoryMap(
   return result;
 }
 
+export function countCompletedMatchupWeeks(
+  historicalMatchups?: Record<number, SleeperMatchup[]>
+): number {
+  if (!historicalMatchups) return 0;
+  let count = 0;
+  for (const matchups of Object.values(historicalMatchups)) {
+    if (Array.isArray(matchups) && matchups.length > 0) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export function computeRosterWeeklyMatchupAverages(
+  historicalMatchups?: Record<number, SleeperMatchup[]>
+): Map<number, number> {
+  const result = new Map<number, number>();
+  if (!historicalMatchups) return result;
+
+  const totalsByRosterId = new Map<number, { weeksCount: number; total: number }>();
+  for (const weekMatchups of Object.values(historicalMatchups)) {
+    if (!Array.isArray(weekMatchups) || weekMatchups.length === 0) continue;
+    for (const m of weekMatchups) {
+      if (typeof m.points === 'number' && !Number.isNaN(m.points) && m.points > 0) {
+        const acc = totalsByRosterId.get(m.roster_id) ?? { weeksCount: 0, total: 0 };
+        acc.weeksCount += 1;
+        acc.total += m.points;
+        totalsByRosterId.set(m.roster_id, acc);
+      }
+    }
+  }
+
+  for (const [rosterId, acc] of totalsByRosterId.entries()) {
+    if (acc.weeksCount <= 0) continue;
+    result.set(rosterId, Math.round((acc.total / acc.weeksCount) * 10) / 10);
+  }
+
+  return result;
+}
+
 export function computeMbaPoints(
   stats: SleeperStatLine | undefined | null,
   scoringSettings: MbaScoringSettings = DEFAULT_MBA_SCORING_SETTINGS
