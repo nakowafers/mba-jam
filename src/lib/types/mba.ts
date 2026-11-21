@@ -463,6 +463,8 @@ export interface RosterPowerRanking {
   overallRank: number;
   overallDynastyPower: number;
   contenderScore: number;
+  starterTotalAvgLockIn: number;
+  starterTotalFpg: number;
   contenderRank: number;
   dynastyCoreScore: number;
   dynastyCoreRank: number;
