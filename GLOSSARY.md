@@ -48,6 +48,18 @@ _Avoid_: Lineup Warning, Bench Alert
 The head-to-head projected score differential between a Manager's Roster and their weekly opponent's Roster, which shifts borderline Lock-In decisions toward floor protection (when leading comfortably) or ceiling chasing (when trailing significantly).
 _Avoid_: Win Probability, Score Gap
 
+**Average Lock-In Score**:
+The mean of a player's non-zero Locked Scores across completed scoring weeks in which the player was rostered (Starter Slot or Bench), falling back to raw MBA fantasy points per game when no completed Lock-In weeks exist.
+_Avoid_: Lock-In PPG, Weekly Average, Adjusted FP/G
+
+**Starting 10 Avg Lock-In**:
+The sum of the Average Lock-In Scores across a Roster's 10 Starter Slots, representing its expected weekly scoring output.
+_Avoid_: Starting 10 FP/G, Lineup Total, Starter Points
+
+**Weekly Matchup Average**:
+The mean of a Roster's actual head-to-head matchup point totals across all completed scoring weeks of the season.
+_Avoid_: Points Per Week, Season Average, Matchup PPG
+
 ### Dynasty & Trade Evaluation
 
 **Dynasty Value**:
