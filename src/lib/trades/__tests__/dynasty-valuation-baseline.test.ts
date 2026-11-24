@@ -155,6 +155,57 @@ describe('Multi-Season & Projected Dynasty Value Baseline (MbaLeagueEngine seam)
     expect(lively.seasonMetrics.averageLockInPoints).toBe(0);
   });
 
+  it('falls back cleanly to seasonProjectedFpg (BASELINE_ESTIMATE) for a rookie with 0 prior-season GP and 0 current GP', async () => {
+    const fixtures = createDeterministicMbaFixtures();
+    const rookieId = 'rookie_0gp';
+
+    fixtures.players[rookieId] = {
+      player_id: rookieId,
+      full_name: 'Dylan Harper',
+      first_name: 'Dylan',
+      last_name: 'Harper',
+      age: 19,
+      years_exp: 0,
+      position: 'PG',
+      fantasy_positions: ['PG', 'SG'],
+      team: 'SAS',
+      injury_status: 'Out',
+      injury_notes: 'Thumb',
+      active: true,
+    };
+
+    const roster1 = fixtures.rosters.find((r) => r.roster_id === 1)!;
+    roster1.players = [...(roster1.players ?? []), rookieId];
+    roster1.taxi = [...(roster1.taxi ?? []), rookieId];
+
+    // 0 GP in 2026, 0 GP in prior season, 14.5 FP/G full-season projection
+    fixtures.seasonStats.push(makeStatEntry({ playerId: rookieId, season: '2026', gp: 0, fpg: 0 }));
+    fixtures.previousSeasonStats = [
+      makeStatEntry({ playerId: rookieId, season: '2025', gp: 0, fpg: 0 }),
+    ];
+    fixtures.seasonProjections = [
+      makeStatEntry({ playerId: rookieId, season: '2026', gp: 1, fpg: 14.5 }),
+    ];
+
+    const engine = new MbaLeagueEngine({
+      gateway: new InMemorySleeperGateway(fixtures),
+      stateStore: new InMemoryManagerStateStore(),
+    });
+
+    const snapshot = await engine.getLeagueSnapshot();
+    const rookie = snapshot.rosters
+      .find((r) => r.rosterId === 1)!
+      .allPlayers.find((p) => p.playerId === rookieId)!;
+
+    // baseline = 14.5 (seasonProjectedFpg only)
+    // Age 19 (1.20x), PG/SG (1.0x) -> 14.5 * 1.2 * 1.0 * 2.0 = 34.8
+    expect(rookie.dynastyValue).toBe(34.8);
+    expect(rookie.dynastyValueSource).toBe('BASELINE_ESTIMATE');
+    expect(rookie.dynastyValueBasisNote).toBe('0 GP — est. from season proj (14.5 FP/G)');
+    expect(rookie.seasonMetrics.gamesPlayed).toBe(0);
+    expect(rookie.seasonMetrics.averageLockInPoints).toBe(0);
+  });
+
   it('anchors a 1-GP negative injury-exit outlier (Kon Knueppel profile) near baseline with SMALL_SAMPLE_BLENDED provenance', async () => {
     const fixtures = createDeterministicMbaFixtures();
     const knueppelId = 'knueppel_21';
@@ -540,6 +591,7 @@ describe('HttpSleeperGateway — Prior-Season Stats & Season Projections', () =>
   function createMockFetch(options: {
     failPreviousSeasonStats?: boolean;
     failSeasonProjections?: boolean;
+    seasonProjectionsPayloadOverride?: unknown;
     previousSeasonTag?: string;
   } = {}) {
     const fixtures = createDeterministicMbaFixtures();
@@ -584,6 +636,9 @@ describe('HttpSleeperGateway — Prior-Season Stats & Season Projections', () =>
       if (url === seasonProjUrl) {
         if (options.failSeasonProjections) {
           return new Response('Upstream error', { status: 503 });
+        }
+        if ('seasonProjectionsPayloadOverride' in options) {
+          return okJson(options.seasonProjectionsPayloadOverride);
         }
         return okJson(seasonProjectionsPayload);
       }
@@ -643,5 +698,22 @@ describe('HttpSleeperGateway — Prior-Season Stats & Season Projections', () =>
     expect(bundle.previousSeasonStats).toEqual([]);
     expect(bundle.seasonProjections).toEqual([]);
     expect(bundle.rosters.length).toBeGreaterThan(0);
+  });
+
+  it('gracefully returns seasonProjections: [] when the projections endpoint returns a non-array JSON payload (null or {})', async () => {
+    for (const [idx, badPayload] of [null, {}].entries()) {
+      const { rosteredPlayerId } = createMockFetch({
+        previousSeasonTag: String(2020 + idx),
+        seasonProjectionsPayloadOverride: badPayload,
+      });
+
+      const gateway = new HttpSleeperGateway();
+      const bundle = await gateway.fetchLeagueBundle();
+
+      expect(bundle.seasonProjections).toEqual([]);
+      // Ensure gateway did not throw and fall back to deterministic fixtures (which have no previousSeasonStats)
+      expect(bundle.previousSeasonStats!.map((e) => e.player_id)).toContain(rosteredPlayerId);
+      expect(bundle.rosters.length).toBeGreaterThan(0);
+    }
   });
 });

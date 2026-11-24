@@ -141,9 +141,9 @@ export class HttpSleeperGateway implements SleeperGateway {
       const previousSeasonStats = previousSeasonStatsRaw.filter((entry) =>
         Boolean(players[entry.player_id])
       );
-      const seasonProjections = seasonProjectionsRaw.filter((entry) =>
-        Boolean(players[entry.player_id])
-      );
+      const seasonProjections = (
+        Array.isArray(seasonProjectionsRaw) ? seasonProjectionsRaw : []
+      ).filter((entry) => Boolean(players[entry.player_id]));
       const weeklyStats = weeklyStatsRaw.filter((entry) => Boolean(players[entry.player_id]));
       const weeklyProjections = weeklyProjRaw.filter((entry) => Boolean(players[entry.player_id]));
 
