@@ -22,8 +22,10 @@ import {
 } from 'lucide-react';
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
 import { DynastyValueEstBadge } from '@/components/trades/dynasty-value-est-badge';
+import { describeReplacementCutAdjustment } from '@/lib/trades/trade-analyzer';
 import {
   DraftPickAsset,
+  HydratedRoster,
   ProjectedPickTier,
   RosterPlayerSlot,
   TradeLetterGrade,
@@ -80,6 +82,113 @@ function GradeBadge({ grade }: { grade: TradeLetterGrade }) {
   );
 }
 
+function deriveBuilderStateFromProposal(
+  proposal: TradeProposal,
+  rosters: HydratedRoster[],
+  allPicks: DraftPickAsset[]
+): {
+  teamCount: 2 | 3;
+  selectedRosterIds: number[];
+  directedPlayers: DirectedPlayerAsset[];
+  directedPicks: DirectedPickAsset[];
+  pickTierOverrides: Record<string, ProjectedPickTier>;
+} | null {
+  if (!proposal.participants || proposal.participants.length < 2) return null;
+  const count: 2 | 3 = proposal.participants.length >= 3 ? 3 : 2;
+  const pIds = proposal.participants.slice(0, count).map((p) => p.rosterId);
+  const fallbackThird = rosters.find((r) => !pIds.includes(r.rosterId))?.rosterId ?? 4;
+
+  const nextPlayers: DirectedPlayerAsset[] = [];
+  const nextPicks: DirectedPickAsset[] = [];
+
+  const ownerByPlayerId = new Map<string, number>();
+  for (const r of rosters) {
+    for (const p of r.allPlayers) {
+      ownerByPlayerId.set(p.playerId, r.rosterId);
+    }
+  }
+  const ownerByPickId = new Map<string, number>();
+  for (const pk of allPicks) {
+    ownerByPickId.set(pk.id, pk.currentOwnerRosterId);
+  }
+
+  for (let i = 0; i < proposal.participants.length && i < count; i++) {
+    const part = proposal.participants[i];
+    const otherDefaultId = proposal.participants[(i + 1) % count].rosterId;
+
+    for (const inPid of part.incomingPlayerIds ?? []) {
+      const explicitSender = proposal.participants.find(
+        (other) =>
+          other.rosterId !== part.rosterId && (other.outgoingPlayerIds ?? []).includes(inPid)
+      )?.rosterId;
+      const fromRosterId =
+        explicitSender ??
+        (pIds.includes(ownerByPlayerId.get(inPid) ?? -1) &&
+        ownerByPlayerId.get(inPid) !== part.rosterId
+          ? ownerByPlayerId.get(inPid)!
+          : otherDefaultId);
+      if (!nextPlayers.some((x) => x.playerId === inPid && x.toRosterId === part.rosterId)) {
+        nextPlayers.push({
+          playerId: inPid,
+          fromRosterId,
+          toRosterId: part.rosterId,
+        });
+      }
+    }
+
+    for (const inPickId of part.incomingPickIds ?? []) {
+      const explicitSender = proposal.participants.find(
+        (other) =>
+          other.rosterId !== part.rosterId && (other.outgoingPickIds ?? []).includes(inPickId)
+      )?.rosterId;
+      const fromRosterId =
+        explicitSender ??
+        (pIds.includes(ownerByPickId.get(inPickId) ?? -1) &&
+        ownerByPickId.get(inPickId) !== part.rosterId
+          ? ownerByPickId.get(inPickId)!
+          : otherDefaultId);
+      if (!nextPicks.some((x) => x.pickId === inPickId && x.toRosterId === part.rosterId)) {
+        nextPicks.push({
+          pickId: inPickId,
+          fromRosterId,
+          toRosterId: part.rosterId,
+        });
+      }
+    }
+  }
+
+  for (let i = 0; i < proposal.participants.length && i < count; i++) {
+    const part = proposal.participants[i];
+    const otherDefaultId = proposal.participants[(i + 1) % count].rosterId;
+    for (const outPid of part.outgoingPlayerIds ?? []) {
+      if (!nextPlayers.some((x) => x.playerId === outPid)) {
+        nextPlayers.push({
+          playerId: outPid,
+          fromRosterId: part.rosterId,
+          toRosterId: otherDefaultId,
+        });
+      }
+    }
+    for (const outPickId of part.outgoingPickIds ?? []) {
+      if (!nextPicks.some((x) => x.pickId === outPickId)) {
+        nextPicks.push({
+          pickId: outPickId,
+          fromRosterId: part.rosterId,
+          toRosterId: otherDefaultId,
+        });
+      }
+    }
+  }
+
+  return {
+    teamCount: count,
+    selectedRosterIds: count === 3 ? pIds : [pIds[0], pIds[1], fallbackThird],
+    directedPlayers: nextPlayers,
+    directedPicks: nextPicks,
+    pickTierOverrides: proposal.pickTierOverrides ?? {},
+  };
+}
+
 export function DynastyTradeBuilder({
   externalProposal,
   onExternalProposalConsumed,
@@ -89,23 +198,43 @@ export function DynastyTradeBuilder({
 } = {}) {
   const { engine, snapshot, activeRosterId } = useMbaLeague();
 
-  const [teamCount, setTeamCount] = useState<2 | 3>(2);
+  const pickMatrix = useMemo(
+    () => engine.getDraftPickMatrix(snapshot),
+    [engine, snapshot]
+  );
+
+  const initialBuilderState = useMemo(() => {
+    if (externalProposal) {
+      return deriveBuilderStateFromProposal(externalProposal, snapshot.rosters, pickMatrix.allPicks);
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [teamCount, setTeamCount] = useState<2 | 3>(initialBuilderState?.teamCount ?? 2);
   const [selectedRosterIds, setSelectedRosterIds] = useState<number[]>(() => {
+    if (initialBuilderState) return initialBuilderState.selectedRosterIds;
     const first = activeRosterId || 1;
     const second = first === 10 ? 1 : 10;
     return [first, second, 4];
   });
 
   // Default seeded trade so the Grade Card is immediately interactive on first visit
-  const [directedPlayers, setDirectedPlayers] = useState<DirectedPlayerAsset[]>([
-    { playerId: '1883', fromRosterId: 1, toRosterId: 10 }, // Alperen Sengun
-    { playerId: 'r10_p5', fromRosterId: 10, toRosterId: 1 }, // Giannis Antetokounmpo
-  ]);
-  const [directedPicks, setDirectedPicks] = useState<DirectedPickAsset[]>([
-    { pickId: '2027-r1-orig-6', fromRosterId: 1, toRosterId: 10 },
-    { pickId: '2028-r1-orig-10', fromRosterId: 1, toRosterId: 10 },
-  ]);
-  const [pickTierOverrides, setPickTierOverrides] = useState<Record<string, ProjectedPickTier>>({});
+  const [directedPlayers, setDirectedPlayers] = useState<DirectedPlayerAsset[]>(
+    initialBuilderState?.directedPlayers ?? [
+      { playerId: '1883', fromRosterId: 1, toRosterId: 10 }, // Alperen Sengun
+      { playerId: 'r10_p5', fromRosterId: 10, toRosterId: 1 }, // Giannis Antetokounmpo
+    ]
+  );
+  const [directedPicks, setDirectedPicks] = useState<DirectedPickAsset[]>(
+    initialBuilderState?.directedPicks ?? [
+      { pickId: '2027-r1-orig-6', fromRosterId: 1, toRosterId: 10 },
+      { pickId: '2028-r1-orig-10', fromRosterId: 1, toRosterId: 10 },
+    ]
+  );
+  const [pickTierOverrides, setPickTierOverrides] = useState<Record<string, ProjectedPickTier>>(
+    initialBuilderState?.pickTierOverrides ?? {}
+  );
 
   // Search/filter state per Roster panel
   const [playerSearchByRoster, setPlayerSearchByRoster] = useState<Record<number, string>>({});
@@ -119,11 +248,6 @@ export function DynastyTradeBuilder({
   // Shareable URL state
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const pickMatrix = useMemo(
-    () => engine.getDraftPickMatrix(snapshot),
-    [engine, snapshot]
-  );
-
   const activeParticipantIds = useMemo(
     () => selectedRosterIds.slice(0, teamCount),
     [selectedRosterIds, teamCount]
@@ -132,104 +256,13 @@ export function DynastyTradeBuilder({
   // Apply a structured TradeProposal into builder state
   const applyProposalToState = useCallback(
     (proposal: TradeProposal) => {
-      if (!proposal.participants || proposal.participants.length < 2) return;
-      const count: 2 | 3 = proposal.participants.length >= 3 ? 3 : 2;
-      setTeamCount(count);
-
-      const pIds = proposal.participants.slice(0, count).map((p) => p.rosterId);
-      const fallbackThird =
-        snapshot.rosters.find((r) => !pIds.includes(r.rosterId))?.rosterId ?? 4;
-      setSelectedRosterIds(count === 3 ? pIds : [pIds[0], pIds[1], fallbackThird]);
-
-      const nextPlayers: DirectedPlayerAsset[] = [];
-      const nextPicks: DirectedPickAsset[] = [];
-
-      // Map player ownership across the league to infer sender when only incoming is listed
-      const ownerByPlayerId = new Map<string, number>();
-      for (const r of snapshot.rosters) {
-        for (const p of r.allPlayers) {
-          ownerByPlayerId.set(p.playerId, r.rosterId);
-        }
-      }
-      const ownerByPickId = new Map<string, number>();
-      for (const pk of pickMatrix.allPicks) {
-        ownerByPickId.set(pk.id, pk.currentOwnerRosterId);
-      }
-
-      for (let i = 0; i < proposal.participants.length && i < count; i++) {
-        const part = proposal.participants[i];
-        const otherDefaultId = proposal.participants[(i + 1) % count].rosterId;
-
-        for (const inPid of part.incomingPlayerIds ?? []) {
-          const explicitSender = proposal.participants.find(
-            (other) =>
-              other.rosterId !== part.rosterId &&
-              (other.outgoingPlayerIds ?? []).includes(inPid)
-          )?.rosterId;
-          const fromRosterId =
-            explicitSender ??
-            (pIds.includes(ownerByPlayerId.get(inPid) ?? -1) &&
-            ownerByPlayerId.get(inPid) !== part.rosterId
-              ? ownerByPlayerId.get(inPid)!
-              : otherDefaultId);
-          if (!nextPlayers.some((x) => x.playerId === inPid && x.toRosterId === part.rosterId)) {
-            nextPlayers.push({
-              playerId: inPid,
-              fromRosterId,
-              toRosterId: part.rosterId,
-            });
-          }
-        }
-
-        for (const inPickId of part.incomingPickIds ?? []) {
-          const explicitSender = proposal.participants.find(
-            (other) =>
-              other.rosterId !== part.rosterId &&
-              (other.outgoingPickIds ?? []).includes(inPickId)
-          )?.rosterId;
-          const fromRosterId =
-            explicitSender ??
-            (pIds.includes(ownerByPickId.get(inPickId) ?? -1) &&
-            ownerByPickId.get(inPickId) !== part.rosterId
-              ? ownerByPickId.get(inPickId)!
-              : otherDefaultId);
-          if (!nextPicks.some((x) => x.pickId === inPickId && x.toRosterId === part.rosterId)) {
-            nextPicks.push({
-              pickId: inPickId,
-              fromRosterId,
-              toRosterId: part.rosterId,
-            });
-          }
-        }
-      }
-
-      // Also include any outgoing items that weren't already added via incoming
-      for (let i = 0; i < proposal.participants.length && i < count; i++) {
-        const part = proposal.participants[i];
-        const otherDefaultId = proposal.participants[(i + 1) % count].rosterId;
-        for (const outPid of part.outgoingPlayerIds ?? []) {
-          if (!nextPlayers.some((x) => x.playerId === outPid)) {
-            nextPlayers.push({
-              playerId: outPid,
-              fromRosterId: part.rosterId,
-              toRosterId: otherDefaultId,
-            });
-          }
-        }
-        for (const outPickId of part.outgoingPickIds ?? []) {
-          if (!nextPicks.some((x) => x.pickId === outPickId)) {
-            nextPicks.push({
-              pickId: outPickId,
-              fromRosterId: part.rosterId,
-              toRosterId: otherDefaultId,
-            });
-          }
-        }
-      }
-
-      setDirectedPlayers(nextPlayers);
-      setDirectedPicks(nextPicks);
-      setPickTierOverrides(proposal.pickTierOverrides ?? {});
+      const derived = deriveBuilderStateFromProposal(proposal, snapshot.rosters, pickMatrix.allPicks);
+      if (!derived) return;
+      setTeamCount(derived.teamCount);
+      setSelectedRosterIds(derived.selectedRosterIds);
+      setDirectedPlayers(derived.directedPlayers);
+      setDirectedPicks(derived.directedPicks);
+      setPickTierOverrides(derived.pickTierOverrides);
     },
     [pickMatrix.allPicks, snapshot.rosters]
   );
@@ -914,31 +947,50 @@ export function DynastyTradeBuilder({
                         </div>
                       )}
 
-                      {part.replacementCutAssets.length > 0 && (
-                        <div
-                          data-testid={`replacement-cut-callout-${part.rosterId}`}
-                          className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-rose-200"
-                        >
-                          <div className="flex items-center justify-between font-semibold">
-                            <span className="flex items-center gap-1.5">
-                              <Scissors className="h-3.5 w-3.5 text-rose-400" />
-                              <span>
-                                Replacement Cut Asset Penalty ({part.replacementCutAssets.length} Bench Drop
-                                {part.replacementCutAssets.length > 1 ? 's' : ''})
+                      {part.replacementCutAssets.length > 0 && (() => {
+                        const cutAdjustment = describeReplacementCutAdjustment({
+                          replacementCutAssets: part.replacementCutAssets,
+                          replacementCutPenalty: part.replacementCutPenalty,
+                          outgoingPicksCount: part.outgoingPicks.length,
+                          incomingPicksCount: part.incomingPicks.length,
+                        });
+                        const hasStarterFallback = part.replacementCutAssets.some(
+                          (c) => c.slotLabel !== 'BN'
+                        );
+                        return (
+                          <div
+                            data-testid={`replacement-cut-callout-${part.rosterId}`}
+                            className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-rose-200"
+                          >
+                            <div className="flex items-center justify-between font-semibold">
+                              <span className="flex items-center gap-1.5">
+                                <Scissors className="h-3.5 w-3.5 text-rose-400" />
+                                <span>
+                                  Replacement Cut Asset Penalty ({part.replacementCutAssets.length}{' '}
+                                  {hasStarterFallback ? 'Roster' : 'Bench'} Drop
+                                  {part.replacementCutAssets.length > 1 ? 's' : ''})
+                                </span>
                               </span>
-                            </span>
-                            <span className="font-mono font-bold text-rose-300">
-                              -{part.replacementCutPenalty.toFixed(1)}
-                            </span>
+                              <span className="font-mono font-bold text-rose-300">
+                                -{part.replacementCutPenalty.toFixed(1)}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-rose-300/90">
+                              Must displace lowest-value {hasStarterFallback ? 'BN/Starter' : 'BN'}:{' '}
+                              {part.replacementCutAssets
+                                .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)})`)
+                                .join(', ')}
+                            </div>
+                            {cutAdjustment.isReduced && (
+                              <div className="mt-1 text-[11px] text-amber-200/90">
+                                Gross {cutAdjustment.rawCutSum.toFixed(1)} DV reduced to -
+                                {part.replacementCutPenalty.toFixed(1)} via{' '}
+                                {cutAdjustment.reasons.join(' & ')}.
+                              </div>
+                            )}
                           </div>
-                          <div className="mt-1 text-[11px] text-rose-300/90">
-                            Must displace lowest-value BN:{' '}
-                            {part.replacementCutAssets
-                              .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)})`)
-                              .join(', ')}
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

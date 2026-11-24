@@ -657,9 +657,12 @@ export interface TradeParticipantProposal {
   incomingPickIds?: string[];
 }
 
+export type TradeEvaluationMode = 'LIVE' | 'HISTORICAL';
+
 export interface TradeProposal {
   participants: TradeParticipantProposal[];
   pickTierOverrides?: Record<string, ProjectedPickTier>;
+  evaluationMode?: TradeEvaluationMode;
 }
 
 export interface ReplacementCutAsset {
@@ -699,9 +702,11 @@ export interface EvaluatedTradePlayerAsset extends FlippedAssetMetadata {
   toRosterId: number;
 }
 
+export type EvaluatedDraftPickSeason = DraftPickSeason | '2025';
+
 export interface EvaluatedTradePickAsset extends FlippedAssetMetadata {
   pickId: string;
-  season: DraftPickSeason;
+  season: EvaluatedDraftPickSeason;
   round: 1 | 2;
   originalRosterId: number;
   originalRosterName: string;

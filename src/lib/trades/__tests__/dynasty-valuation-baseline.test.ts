@@ -465,7 +465,23 @@ describe('Multi-Season & Projected Dynasty Value Baseline (MbaLeagueEngine seam)
 
     const roster1 = fixtures.rosters.find((r) => r.roster_id === 1)!;
     const roster2 = fixtures.rosters.find((r) => r.roster_id === 2)!;
-    roster1.players = [...(roster1.players ?? []), injuredBenchId, lowValueBenchId];
+    const fullIrId = 'extra_ir_full';
+    fixtures.players[fullIrId] = {
+      player_id: fullIrId,
+      full_name: 'Third IR Stash',
+      first_name: 'Third',
+      last_name: 'Stash',
+      age: 26,
+      years_exp: 5,
+      position: 'SF',
+      fantasy_positions: ['SF'],
+      team: 'MIA',
+      injury_status: 'IR',
+      injury_notes: 'Knee',
+      active: true,
+    };
+    roster1.reserve = [...(roster1.reserve ?? []), fullIrId];
+    roster1.players = [...(roster1.players ?? []), injuredBenchId, lowValueBenchId, fullIrId];
     roster2.players = [...(roster2.players ?? []), injuredStarId];
 
     // Both injured players have 0 GP in 2026; lowValueBenchId has 12 GP at 8.0 FP/G (~10.4 Dynasty Value)
