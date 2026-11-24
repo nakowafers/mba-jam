@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
+import { DynastyValueEstBadge } from '@/components/trades/dynasty-value-est-badge';
 import {
   DraftPickAsset,
   ProjectedPickTier,
@@ -802,8 +803,14 @@ export function DynastyTradeBuilder({
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="rounded bg-orange-500/15 px-2 py-0.5 font-mono text-xs font-bold text-orange-300">
-                              {p.dynastyValue.toFixed(1)}
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="rounded bg-orange-500/15 px-2 py-0.5 font-mono text-xs font-bold text-orange-300">
+                                {p.dynastyValue.toFixed(1)}
+                              </span>
+                              <DynastyValueEstBadge
+                                source={p.dynastyValueSource}
+                                basisNote={p.dynastyValueBasisNote}
+                              />
                             </span>
                             <button
                               type="button"
@@ -1137,8 +1144,14 @@ function RosterAssetPicker({
                 </div>
 
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="font-mono text-xs font-extrabold text-orange-300">
-                    {player.dynastyValue.toFixed(1)}
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-mono text-xs font-extrabold text-orange-300">
+                      {player.dynastyValue.toFixed(1)}
+                    </span>
+                    <DynastyValueEstBadge
+                      source={player.dynastyValueSource}
+                      basisNote={player.dynastyValueBasisNote}
+                    />
                   </span>
 
                   {isSent && teamCount === 3 && otherParticipants.length > 1 && (
