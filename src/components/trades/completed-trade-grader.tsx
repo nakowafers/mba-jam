@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
 import { DynastyValueEstBadge } from '@/components/trades/dynasty-value-est-badge';
+import { describeReplacementCutAdjustment } from '@/lib/trades/trade-analyzer';
 import {
   EvaluatedTradePickAsset,
   EvaluatedTradePlayerAsset,
@@ -703,17 +704,32 @@ export function CompletedTradeGrader({
                             </div>
                           </div>
 
-                          {part.replacementCutAssets.length > 0 && (
-                            <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2 text-[11px] text-rose-200">
-                              <Scissors className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
-                              <div>
-                                <span className="font-bold">Replacement Cut Asset(s): </span>
-                                {part.replacementCutAssets
-                                  .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)} DV)`)
-                                  .join(', ')}
+                          {part.replacementCutAssets.length > 0 && (() => {
+                            const cutAdjustment = describeReplacementCutAdjustment({
+                              replacementCutAssets: part.replacementCutAssets,
+                              replacementCutPenalty: part.replacementCutPenalty,
+                              outgoingPicksCount: part.outgoingPicks.length,
+                              incomingPicksCount: part.incomingPicks.length,
+                            });
+                            return (
+                              <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2 text-[11px] text-rose-200">
+                                <Scissors className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
+                                <div>
+                                  <span className="font-bold">Replacement Cut Asset(s): </span>
+                                  {part.replacementCutAssets
+                                    .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)} DV)`)
+                                    .join(', ')}
+                                  {cutAdjustment.isReduced && (
+                                    <div className="mt-0.5 text-amber-200/90">
+                                      Gross {cutAdjustment.rawCutSum.toFixed(1)} DV reduced to -
+                                      {part.replacementCutPenalty.toFixed(1)} via{' '}
+                                      {cutAdjustment.reasons.join(' & ')}.
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
 
                           <ul className="space-y-1 text-[11px] text-slate-300">
                             {part.takeaways.map((bullet, bIdx) => (

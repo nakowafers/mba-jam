@@ -181,6 +181,7 @@ export function evaluateHistoricalLeagueTrades(params: {
       proposal,
       snapshot,
       stateStore,
+      evaluationMode: 'HISTORICAL',
     });
 
     return {
