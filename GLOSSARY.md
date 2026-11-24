@@ -63,7 +63,7 @@ _Avoid_: Points Per Week, Season Average, Matchup PPG
 ### Dynasty & Trade Evaluation
 
 **Dynasty Value**:
-A unified metric quantifying the long-term worth of an NBA player or Draft Pick Asset in the MBA league, combining custom MBA fantasy points per game, player age curve, and two-Center positional scarcity.
+A unified metric quantifying the healthy long-term worth of an NBA player or Draft Pick Asset in the MBA league, combining custom MBA fantasy points per game (anchored to a multi-season and full-season projected production baseline when the current-season sample is small), player age curve, and two-Center positional scarcity.
 _Avoid_: Trade Points, Market Rank, Player Rating
 
 **Draft Pick Asset**:
