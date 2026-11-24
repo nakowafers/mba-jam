@@ -75,12 +75,28 @@ The estimated slot bucket (`Early` 1–3, `Mid` 4–6, or `Late` 7–10) of a Dr
 _Avoid_: Pick Rank, Draft Order
 
 **Consolidation Premium**:
-The non-linear value bonus applied to the higher-value elite assets in an uneven multi-asset trade (such as 2-for-1 or 3-for-1), reflecting that a 10-team league has only 10 Starter Slots per Roster.
+The non-linear scarcity bonus applied to elite cornerstone assets—both across star-tier gaps and when compressing multiple players or first-round Draft Pick Assets into fewer assets—reflecting that a 10-team league has only 10 Starter Slots per Roster.
 _Avoid_: Star Tax, Trade Multiplier
 
 **Replacement Cut Asset**:
-The lowest-Dynasty-Value Bench player(s) on a Roster that must be dropped (or displaced) to absorb excess incoming players in an uneven trade.
+The lowest-Dynasty-Value Bench player(s) on a full Roster that must be dropped (or displaced) when incoming players exceed outgoing players and available open Roster slots.
 _Avoid_: Throw-In, Waiver Fodder
+
+**Waiver Replacement Baseline**:
+The long-term Dynasty Value of a freely available waiver-wire player in a 10-team league, which offsets the gross drop cost of a Replacement Cut Asset when a Manager converts Draft Pick Assets into active players rather than absorbing a multi-player dump.
+_Avoid_: Free Agent Floor, Zero Value
+
+**Settlement Transfer**:
+A unilateral transaction in which one Roster transfers players or Draft Pick Assets while receiving zero assets in return (such as fulfilling an off-book conditional pick swap), excluded from competitive win/loss grading.
+_Avoid_: Collusion Trade, Empty Trade, Dump
+
+**Trade Grade**:
+A per-Roster letter rating (`A+` through `F`, or `N/A` for an incomplete proposal or Settlement Transfer) evaluating how a trade changes both Adjusted Package Dynasty Value and Starting 10 Avg Lock-In relative to that Roster's competitive timeline.
+_Avoid_: Trade Score, Winner Rating
+
+**Trade Fairness**:
+A trade-wide `0–100` balance index and tier label (`Balanced Trade`, `Slight Edge`, `Lopsided Trade`, `Fleecing Alert`, or `Settlement Transfer`) measuring how evenly surplus value is shared across participating Rosters, accounting for mutually beneficial contender-versus-rebuilder timeline exchanges.
+_Avoid_: Veto Meter, Collusion Score
 
 **Flipped Asset**:
 A player or Draft Pick Asset acquired in a historical trade that was subsequently traded away in a later transaction by the acquiring Roster.
