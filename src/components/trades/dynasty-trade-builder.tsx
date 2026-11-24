@@ -618,7 +618,9 @@ export function DynastyTradeBuilder({
                         ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40'
                         : evaluation.fairnessLabel === 'Slight Edge'
                           ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40'
-                          : 'bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40'
+                          : evaluation.fairnessLabel === 'Lopsided Trade'
+                            ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
+                            : 'bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40'
                     }`}
                   >
                     {evaluation.fairnessLabel} ({evaluation.fairnessScore}/100 Fairness)
@@ -641,11 +643,13 @@ export function DynastyTradeBuilder({
               <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    evaluation.fairnessScore >= 80
+                    evaluation.fairnessScore >= 85
                       ? 'bg-emerald-500'
-                      : evaluation.fairnessScore >= 60
-                        ? 'bg-amber-400'
-                        : 'bg-rose-500'
+                      : evaluation.fairnessScore >= 68
+                        ? 'bg-sky-500'
+                        : evaluation.fairnessScore >= 45
+                          ? 'bg-amber-400'
+                          : 'bg-rose-500'
                   }`}
                   style={{ width: `${Math.max(8, evaluation.fairnessScore)}%` }}
                 />

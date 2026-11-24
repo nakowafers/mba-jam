@@ -296,12 +296,13 @@ describe('Trade Analyzer — Average Lock-In Optimization & Evaluation', () => {
       Math.round((side2.preTradeOptimalStarterAvgLockIn - 10.0) * 10) / 10
     );
 
-    // Axis 2 composite grade responds directly to starting10DeltaAvgLockIn (0 + 10.0 * 2.2 = +22.0 -> A+)
+    // Axis 2 composite grade responds directly to starting10DeltaAvgLockIn:
+    // Side 1 (Top-5 Contender, 2.2x Win-Now Boost): 0 + 10.0 * 2.2 = +22.0 -> A (>= 21.0, < 32.0)
     expect(side1.compositeGradeScore).toBe(22.0);
-    expect(side1.letterGrade).toBe('A+');
-    // Side 2: 0 + (-10.0) * 2.2 = -22.0 -> C-
-    expect(side2.compositeGradeScore).toBe(-22.0);
-    expect(side2.letterGrade).toBe('C-');
+    expect(side1.letterGrade).toBe('A');
+    // Side 2 (negative delta without picks/youth/sidelined focus, 1.5x LIVE base): 0 + (-10.0) * 1.5 = -15.0 -> C+ (>= -20.0, < -12.5)
+    expect(side2.compositeGradeScore).toBe(-15.0);
+    expect(side2.letterGrade).toBe('C+');
     expect(evalResult.winnerRosterId).toBe(1);
 
     // Takeaways lead with Avg Lock-In and include raw FP/G in parentheses
@@ -316,7 +317,7 @@ describe('Trade Analyzer — Average Lock-In Optimization & Evaluation', () => {
     );
   });
 
-  it('dampens negative starting10DeltaAvgLockIn weight (0.9x vs 2.2x) when a rebuilding Roster gains Dynasty Value via incoming draft picks', async () => {
+  it('dampens negative starting10DeltaAvgLockIn weight (0.65x vs 1.5x) when a rebuilding Roster gains Dynasty Value via incoming draft picks', async () => {
     const fixtures = createDeterministicMbaFixtures();
     const gateway = new InMemorySleeperGateway(fixtures);
     const stateStore = new InMemoryManagerStateStore();
@@ -348,10 +349,10 @@ describe('Trade Analyzer — Average Lock-In Optimization & Evaluation', () => {
     const r4 = evalResult.participants.find((p) => p.rosterId === 4)!;
     expect(r4.starting10DeltaAvgLockIn).toBeLessThan(0);
     expect(r4.incomingPicks.length).toBe(1);
+    expect(r4.adjustedDynastyDelta).toBeGreaterThanOrEqual(-4.0);
 
-    const expectedWeight = r4.adjustedDynastyDelta > 0 ? 0.9 : 2.2;
     const expectedComposite =
-      Math.round((r4.adjustedDynastyDelta + r4.starting10DeltaAvgLockIn * expectedWeight) * 10) / 10;
+      Math.round((r4.adjustedDynastyDelta + r4.starting10DeltaAvgLockIn * 0.65) * 10) / 10;
     expect(r4.compositeGradeScore).toBe(expectedComposite);
   });
 });
