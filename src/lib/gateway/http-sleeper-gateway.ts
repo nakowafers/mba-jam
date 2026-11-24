@@ -23,6 +23,9 @@ const PLAYERS_TTL_MS = 60 * 60 * 1000;
 // Cache immutable completed weekly matchups in server memory keyed by `${leagueId}:${leg}`
 const cachedCompletedMatchups = new Map<string, SleeperMatchup[]>();
 
+// Cache immutable prior-season regular-season stats in server memory keyed by season (e.g. '2025')
+const cachedPreviousSeasonStats = new Map<string, SleeperGameStatEntry[]>();
+
 async function fetchJson<T>(url: string, forceRefresh?: boolean): Promise<T> {
   const res = await fetch(url, {
     cache: forceRefresh ? 'no-store' : 'default',
@@ -60,6 +63,8 @@ export class HttpSleeperGateway implements SleeperGateway {
 
       const activeLeg = options?.leg ?? nbaState.leg ?? league.settings?.leg ?? 1;
       const season = league.season || nbaState.season || '2026';
+      const parsedSeason = Number.parseInt(season, 10);
+      const previousSeason = Number.isFinite(parsedSeason) ? String(parsedSeason - 1) : '2025';
 
       // Collect all player IDs on MBA rosters so we only keep needed players in the bundle
       const rosterPlayerIds = new Set<string>();
@@ -74,6 +79,8 @@ export class HttpSleeperGateway implements SleeperGateway {
         matchups,
         historicalMatchups,
         seasonStatsRaw,
+        previousSeasonStatsRaw,
+        seasonProjectionsRaw,
         weeklyStatsRaw,
         weeklyProjRaw,
         fullPlayersDict,
@@ -88,6 +95,11 @@ export class HttpSleeperGateway implements SleeperGateway {
           `https://api.sleeper.com/stats/nba/${season}?season_type=regular`,
           force
         ),
+        this.fetchPreviousSeasonStats(previousSeason, force),
+        fetchJson<SleeperGameStatEntry[]>(
+          `https://api.sleeper.com/projections/nba/${season}?season_type=regular`,
+          force
+        ).catch(() => [] as SleeperGameStatEntry[]),
         fetchJson<SleeperGameStatEntry[]>(
           `https://api.sleeper.com/stats/nba/${season}/${activeLeg}?season_type=regular`,
           force
@@ -126,6 +138,12 @@ export class HttpSleeperGateway implements SleeperGateway {
         }
       }
 
+      const previousSeasonStats = previousSeasonStatsRaw.filter((entry) =>
+        Boolean(players[entry.player_id])
+      );
+      const seasonProjections = (
+        Array.isArray(seasonProjectionsRaw) ? seasonProjectionsRaw : []
+      ).filter((entry) => Boolean(players[entry.player_id]));
       const weeklyStats = weeklyStatsRaw.filter((entry) => Boolean(players[entry.player_id]));
       const weeklyProjections = weeklyProjRaw.filter((entry) => Boolean(players[entry.player_id]));
 
@@ -140,6 +158,8 @@ export class HttpSleeperGateway implements SleeperGateway {
         transactions: historicalTransactions,
         players,
         seasonStats,
+        previousSeasonStats,
+        seasonProjections,
         weeklyStats,
         weeklyProjections,
       };
@@ -234,6 +254,31 @@ export class HttpSleeperGateway implements SleeperGateway {
       historicalMatchups[leg] = data;
     }
     return historicalMatchups;
+  }
+
+  private async fetchPreviousSeasonStats(
+    previousSeason: string,
+    forceRefresh?: boolean
+  ): Promise<SleeperGameStatEntry[]> {
+    if (!forceRefresh) {
+      const cached = cachedPreviousSeasonStats.get(previousSeason);
+      if (cached) {
+        return cached;
+      }
+    }
+    try {
+      const data = await fetchJson<SleeperGameStatEntry[]>(
+        `https://api.sleeper.com/stats/nba/${previousSeason}?season_type=regular`,
+        forceRefresh
+      );
+      const list = Array.isArray(data) ? data : [];
+      if (list.length > 0) {
+        cachedPreviousSeasonStats.set(previousSeason, list);
+      }
+      return list;
+    } catch {
+      return [];
+    }
   }
 
   private async getPlayersDictionary(): Promise<Record<string, SleeperPlayer>> {

@@ -75,6 +75,18 @@ function getStoreGameCountMap(store: ManagerStateStore): Map<string, number> {
   return map;
 }
 
+function indexStatEntriesByPlayerId(
+  entries?: SleeperGameStatEntry[]
+): Map<string, SleeperGameStatEntry> {
+  const map = new Map<string, SleeperGameStatEntry>();
+  for (const entry of entries ?? []) {
+    if (entry.player_id) {
+      map.set(entry.player_id, entry);
+    }
+  }
+  return map;
+}
+
 export interface MbaLeagueEngineDeps {
   gateway: SleeperGateway;
   stateStore: ManagerStateStore;
@@ -499,13 +511,10 @@ export class MbaLeagueEngine {
       bundle.historicalMatchups
     );
 
-    // Index season stats by player_id
-    const seasonStatByPlayerId = new Map<string, SleeperGameStatEntry>();
-    for (const entry of bundle.seasonStats) {
-      if (entry.player_id) {
-        seasonStatByPlayerId.set(entry.player_id, entry);
-      }
-    }
+    // Index season stats, prior-season stats, and full-season projections by player_id
+    const seasonStatByPlayerId = indexStatEntriesByPlayerId(bundle.seasonStats);
+    const previousSeasonStatByPlayerId = indexStatEntriesByPlayerId(bundle.previousSeasonStats);
+    const seasonProjByPlayerId = indexStatEntriesByPlayerId(bundle.seasonProjections);
 
     // Index weekly completed games and remaining projections by player_id
     const weeklyCompletedByPlayerId = new Map<string, SleeperGameStatEntry[]>();
@@ -632,21 +641,45 @@ export class MbaLeagueEngine {
 
       const latestCompletedGame = lockIn.completedGames.at(-1) ?? null;
 
+      const nonEmptyProjectionEntries = projectionEntries.filter(
+        (p) => p.stats && Object.keys(p.stats).length > 0
+      );
       const projectedFpg =
-        projectionEntries.length > 0
-          ? projectionEntries.reduce(
+        nonEmptyProjectionEntries.length > 0
+          ? nonEmptyProjectionEntries.reduce(
               (sum, p) => sum + computeMbaPoints(p.stats, scoringSettings),
               0
-            ) / projectionEntries.length
+            ) / nonEmptyProjectionEntries.length
           : null;
 
-      const { dynastyValue } = computePlayerDynastyValue({
-        actualFpg: seasonMetrics.mbaFantasyPointsPerGame,
-        gamesPlayed: seasonMetrics.gamesPlayed,
-        projectedFpg,
-        age,
-        positions,
-      });
+      const previousSeasonEntry = previousSeasonStatByPlayerId.get(playerId);
+      const priorSeasonMetrics = previousSeasonEntry?.stats
+        ? computeSeasonMetrics(previousSeasonEntry.stats, scoringSettings)
+        : null;
+      const priorSeasonGamesPlayed = priorSeasonMetrics?.gamesPlayed ?? 0;
+      const priorSeasonFpg =
+        priorSeasonGamesPlayed > 0 ? priorSeasonMetrics!.mbaFantasyPointsPerGame : null;
+
+      const seasonProjEntry = seasonProjByPlayerId.get(playerId);
+      let seasonProjectedFpg: number | null = null;
+      if (seasonProjEntry?.stats && Object.keys(seasonProjEntry.stats).length > 0) {
+        seasonProjectedFpg =
+          seasonProjEntry.stats.gp && seasonProjEntry.stats.gp > 0
+            ? computeSeasonMetrics(seasonProjEntry.stats, scoringSettings).mbaFantasyPointsPerGame
+            : Math.round(computeMbaPoints(seasonProjEntry.stats, scoringSettings) * 10) / 10;
+      }
+
+      const { dynastyValue, dynastyValueSource, dynastyValueBasisNote } =
+        computePlayerDynastyValue({
+          actualFpg: seasonMetrics.mbaFantasyPointsPerGame,
+          gamesPlayed: seasonMetrics.gamesPlayed,
+          projectedFpg,
+          seasonProjectedFpg,
+          priorSeasonFpg,
+          priorSeasonGamesPlayed,
+          age,
+          positions,
+        });
 
       return {
         slotIndex,
@@ -682,6 +715,8 @@ export class MbaLeagueEngine {
         leverageAnnotation: lockIn.leverageAnnotation,
         lockIn,
         dynastyValue,
+        dynastyValueSource,
+        dynastyValueBasisNote,
       };
     };
 

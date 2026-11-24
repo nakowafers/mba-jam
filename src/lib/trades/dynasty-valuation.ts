@@ -3,6 +3,7 @@ import {
   DraftPickMatrix,
   DraftPickMatrixRow,
   DraftPickSeason,
+  DynastyValueSource,
   HydratedRoster,
   MBA_DRAFT_PICK_SEASONS,
   ManagerStateStore,
@@ -43,29 +44,95 @@ export function getCenterScarcityMultiplier(positions: readonly string[]): numbe
   return positions.includes('C') ? 1.12 : 1.0;
 }
 
+function isPositiveNumber(value: number | null | undefined): value is number {
+  return typeof value === 'number' && !Number.isNaN(value) && value > 0;
+}
+
+function buildBaselineParts(params: {
+  priorSeasonFpg: number | null;
+  priorSeasonGamesPlayed?: number;
+  seasonProjectedFpg: number | null;
+  weeklyProjectedFpg: number | null;
+}): string[] {
+  const parts: string[] = [];
+  if (params.priorSeasonFpg !== null) {
+    const gpSuffix =
+      typeof params.priorSeasonGamesPlayed === 'number' && params.priorSeasonGamesPlayed > 0
+        ? `, ${params.priorSeasonGamesPlayed} GP`
+        : '';
+    parts.push(`prior season (${params.priorSeasonFpg.toFixed(1)} FP/G${gpSuffix})`);
+  }
+  if (params.seasonProjectedFpg !== null) {
+    parts.push(`season proj (${params.seasonProjectedFpg.toFixed(1)} FP/G)`);
+  } else if (parts.length === 0 && params.weeklyProjectedFpg !== null) {
+    parts.push(`weekly proj (${params.weeklyProjectedFpg.toFixed(1)} FP/G)`);
+  }
+  return parts;
+}
+
 /**
  * Evaluates a player's 0–100 MBA Dynasty Value combining custom-scored MBA FP/G
- * (blending actual + projected FP/G), the Dynasty Age Curve, and the 2-Center scarcity boost.
+ * (blending actual + projected FP/G, or prior-season + full-season projected baseline
+ * when current-season sample size is < 10 GP), the Dynasty Age Curve, and the 2-Center scarcity boost.
  */
 export function computePlayerDynastyValue(
   input: PlayerDynastyValuationInput
 ): PlayerDynastyValuation {
-  const gamesPlayed = input.gamesPlayed ?? 1;
-  const hasProjected =
-    typeof input.projectedFpg === 'number' &&
-    !Number.isNaN(input.projectedFpg) &&
-    input.projectedFpg > 0;
+  const gamesPlayed = input.gamesPlayed ?? (input.actualFpg > 0 ? 10 : 0);
+  const priorSeasonFpg = isPositiveNumber(input.priorSeasonFpg) ? input.priorSeasonFpg : null;
+  const seasonProjectedFpg = isPositiveNumber(input.seasonProjectedFpg)
+    ? input.seasonProjectedFpg
+    : null;
+  const weeklyProjectedFpg = isPositiveNumber(input.projectedFpg) ? input.projectedFpg : null;
+
+  let baselineFpg: number | null = null;
+  if (priorSeasonFpg !== null && seasonProjectedFpg !== null) {
+    const priorWeight = Math.min(0.6, Math.max(0, input.priorSeasonGamesPlayed ?? 50) / 50);
+    baselineFpg = priorWeight * priorSeasonFpg + (1 - priorWeight) * seasonProjectedFpg;
+  } else if (priorSeasonFpg !== null) {
+    baselineFpg = priorSeasonFpg;
+  } else if (seasonProjectedFpg !== null) {
+    baselineFpg = seasonProjectedFpg;
+  }
+
+  const effectiveProjectedFpg = seasonProjectedFpg ?? weeklyProjectedFpg;
 
   let blendedFpg: number;
-  if (gamesPlayed > 0 && hasProjected) {
+  let dynastyValueSource: DynastyValueSource = 'ACTUAL_ESTABLISHED';
+  let dynastyValueBasisNote: string | null = null;
+
+  if (gamesPlayed >= 10 || (gamesPlayed > 0 && baselineFpg === null)) {
     blendedFpg =
-      Math.round((0.75 * input.actualFpg + 0.25 * (input.projectedFpg as number)) * 100) / 100;
-  } else if (gamesPlayed > 0) {
-    blendedFpg = input.actualFpg;
-  } else if (hasProjected) {
-    blendedFpg = input.projectedFpg as number;
+      effectiveProjectedFpg !== null
+        ? Math.round((0.75 * input.actualFpg + 0.25 * effectiveProjectedFpg) * 100) / 100
+        : input.actualFpg;
   } else {
-    blendedFpg = input.actualFpg;
+    const baselineParts = buildBaselineParts({
+      priorSeasonFpg,
+      priorSeasonGamesPlayed: input.priorSeasonGamesPlayed,
+      seasonProjectedFpg,
+      weeklyProjectedFpg,
+    });
+
+    if (gamesPlayed === 0) {
+      const estimateFpg = baselineFpg ?? effectiveProjectedFpg;
+      if (estimateFpg !== null) {
+        blendedFpg = Math.round(estimateFpg * 100) / 100;
+        dynastyValueSource = 'BASELINE_ESTIMATE';
+        dynastyValueBasisNote = `0 GP — est. from ${baselineParts.join(' & ')}`;
+      } else {
+        blendedFpg = input.actualFpg;
+      }
+    } else {
+      // 0 < gamesPlayed < 10 with a positive baselineFpg
+      const sampleWeight = gamesPlayed / 10;
+      const actualWeight = 0.75 * sampleWeight;
+      blendedFpg =
+        Math.round((actualWeight * input.actualFpg + (1 - actualWeight) * baselineFpg!) * 100) /
+        100;
+      dynastyValueSource = 'SMALL_SAMPLE_BLENDED';
+      dynastyValueBasisNote = `${gamesPlayed} GP — blended with ${baselineParts.join(' & ')}`;
+    }
   }
 
   const ageMultiplier = getDynastyAgeMultiplier(input.age);
@@ -78,6 +145,8 @@ export function computePlayerDynastyValue(
     ageMultiplier,
     scarcityMultiplier,
     dynastyValue,
+    dynastyValueSource,
+    dynastyValueBasisNote,
   };
 }
 

@@ -440,6 +440,8 @@ export function evaluateDynastyTrade(params: {
         fpg: slot.seasonMetrics.mbaFantasyPointsPerGame,
         avgLockIn: slot.seasonMetrics.averageLockInPoints,
         dynastyValue: slot.dynastyValue,
+        dynastyValueSource: slot.dynastyValueSource,
+        dynastyValueBasisNote: slot.dynastyValueBasisNote,
         consolidationPremium: computeSingleAssetConsolidationBonus(slot.dynastyValue),
         fromRosterId,
         toRosterId,

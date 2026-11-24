@@ -20,6 +20,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
+import { DynastyValueEstBadge } from '@/components/trades/dynasty-value-est-badge';
 import {
   EvaluatedTradePickAsset,
   EvaluatedTradePlayerAsset,
@@ -536,9 +537,15 @@ export function CompletedTradeGrader({
                                       {p.avgLockIn.toFixed(1)} Avg LI • {p.fpg.toFixed(1)} FP/G)
                                     </span>
                                   </div>
-                                  <span className="shrink-0 rounded bg-orange-500/15 px-2 py-0.5 font-mono text-xs font-bold text-orange-300">
-                                    {p.dynastyValue.toFixed(1)}
-                                  </span>
+                                  <div className="flex shrink-0 items-center gap-1.5">
+                                    <span className="rounded bg-orange-500/15 px-2 py-0.5 font-mono text-xs font-bold text-orange-300">
+                                      {p.dynastyValue.toFixed(1)}
+                                    </span>
+                                    <DynastyValueEstBadge
+                                      source={p.dynastyValueSource}
+                                      basisNote={p.dynastyValueBasisNote}
+                                    />
+                                  </div>
                                 </div>
 
                                 {p.isFlippedAsset && p.flippedInTransactionId && (

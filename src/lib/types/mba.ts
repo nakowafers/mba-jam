@@ -299,6 +299,11 @@ export interface MatchupLeverageSummary {
   summaryText: string;
 }
 
+export type DynastyValueSource =
+  | 'ACTUAL_ESTABLISHED'
+  | 'SMALL_SAMPLE_BLENDED'
+  | 'BASELINE_ESTIMATE';
+
 export interface RosterPlayerSlot {
   slotIndex: number;
   slotLabel: StarterSlotType | 'BN' | 'IR' | 'TAXI';
@@ -330,12 +335,17 @@ export interface RosterPlayerSlot {
   leverageAnnotation: MatchupLeverageAnnotation;
   lockIn: PlayerLockInEvaluation;
   dynastyValue: number;
+  dynastyValueSource?: DynastyValueSource;
+  dynastyValueBasisNote?: string | null;
 }
 
 export interface PlayerDynastyValuationInput {
   actualFpg: number;
   gamesPlayed?: number;
   projectedFpg?: number | null;
+  seasonProjectedFpg?: number | null;
+  priorSeasonFpg?: number | null;
+  priorSeasonGamesPlayed?: number;
   age: number | null;
   positions: string[];
 }
@@ -345,6 +355,8 @@ export interface PlayerDynastyValuation {
   ageMultiplier: number;
   scarcityMultiplier: number;
   dynastyValue: number;
+  dynastyValueSource: DynastyValueSource;
+  dynastyValueBasisNote: string | null;
 }
 
 export interface RosterStanding {
@@ -491,6 +503,8 @@ export interface SleeperLeagueBundle {
   transactions?: SleeperTransaction[];
   players: Record<string, SleeperPlayer>;
   seasonStats: SleeperGameStatEntry[];
+  previousSeasonStats?: SleeperGameStatEntry[];
+  seasonProjections?: SleeperGameStatEntry[];
   weeklyStats: SleeperGameStatEntry[];
   weeklyProjections: SleeperGameStatEntry[];
 }
@@ -678,6 +692,8 @@ export interface EvaluatedTradePlayerAsset extends FlippedAssetMetadata {
   fpg: number;
   avgLockIn: number;
   dynastyValue: number;
+  dynastyValueSource?: DynastyValueSource;
+  dynastyValueBasisNote?: string | null;
   consolidationPremium: number;
   fromRosterId: number;
   toRosterId: number;
