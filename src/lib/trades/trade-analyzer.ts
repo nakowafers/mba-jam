@@ -1,5 +1,9 @@
 import { isPlayerEligibleForStarterSlot } from '@/lib/lineup/slot-optimizer';
-import { computeDraftPickDynastyValue, resolveDraftPickMatrix } from './dynasty-valuation';
+import {
+  computeDraftPickDynastyValue,
+  computeLeaguePowerRankings,
+  resolveDraftPickMatrix,
+} from './dynasty-valuation';
 import {
   DraftPickAsset,
   EvaluatedDraftPickSeason,
@@ -239,20 +243,38 @@ export function computeSingleAssetConsolidationBonus(dynastyValue: number): numb
   return Math.round((tier1 + tier2 + tier3) * 10) / 10;
 }
 
+function isIrOrOutSlot(slot: RosterPlayerSlot | undefined): boolean {
+  return Boolean(
+    slot &&
+      (slot.injuryStatus === 'Out' ||
+        slot.injuryStatus === 'IR' ||
+        slot.slotLabel === 'IR')
+  );
+}
+
 /**
- * Maps a composite trade evaluation score to a canonical Letter Grade (A+ through F).
+ * Soft-compresses extreme Starting 10 Δ Avg Lock-In swings beyond ±14.0 at a 0.5x marginal slope.
+ */
+export function compressAxis2Delta(delta: number): number {
+  if (delta === 0) return 0;
+  const abs = Math.abs(delta);
+  return Math.sign(delta) * (Math.min(abs, 14.0) + Math.max(0, abs - 14.0) * 0.5);
+}
+
+/**
+ * Maps a composite trade evaluation score to a canonical Asset-Anchored Letter Grade (A+ through F).
  */
 export function getTradeLetterGrade(compositeScore: number): TradeLetterGrade {
-  if (compositeScore >= 22) return 'A+';
-  if (compositeScore >= 14) return 'A';
-  if (compositeScore >= 8) return 'A-';
-  if (compositeScore >= 3.5) return 'B+';
-  if (compositeScore >= -3.5) return 'B';
-  if (compositeScore >= -8) return 'B-';
-  if (compositeScore >= -13) return 'C+';
-  if (compositeScore >= -18) return 'C';
-  if (compositeScore >= -24) return 'C-';
-  if (compositeScore >= -32) return 'D';
+  if (compositeScore >= 32.0) return 'A+';
+  if (compositeScore >= 21.0) return 'A';
+  if (compositeScore >= 12.5) return 'A-';
+  if (compositeScore >= 5.5) return 'B+';
+  if (compositeScore >= -5.5) return 'B';
+  if (compositeScore >= -12.5) return 'B-';
+  if (compositeScore >= -20.0) return 'C+';
+  if (compositeScore >= -28.0) return 'C';
+  if (compositeScore >= -37.0) return 'C-';
+  if (compositeScore >= -48.0) return 'D';
   return 'F';
 }
 
@@ -443,6 +465,24 @@ export function evaluateDynastyTrade(params: {
   }
 
   const normalizedParticipants = normalizeTradeParticipants(proposal, rosterById, pickById);
+
+  // Precompute LIVE Contender threshold (5th-highest optimal Starting 10 Avg Lock-In) & archetypes
+  let top5ContenderThreshold = Infinity;
+  let archetypeByRosterId = new Map<number, string>();
+  if (evaluationMode === 'LIVE') {
+    const rosterOptimalTotals = snapshot.rosters
+      .map((r) => solveOptimalStarting10Lineup(r.allPlayers).totalAvgLockIn)
+      .sort((a, b) => b - a);
+    if (rosterOptimalTotals.length > 0) {
+      top5ContenderThreshold =
+        rosterOptimalTotals[Math.min(4, rosterOptimalTotals.length - 1)];
+    }
+    const powerRankings = computeLeaguePowerRankings({
+      rosters: snapshot.rosters,
+      pickMatrix,
+    });
+    archetypeByRosterId = new Map(powerRankings.map((r) => [r.rosterId, r.archetype]));
+  }
 
   // Map each traded player/pick to its sender and receiver rosterId
   const senderByPlayerId = new Map<string, number>();
@@ -646,15 +686,9 @@ export function evaluateDynastyTrade(params: {
         roster.starterSlots.filter(isRealPlayer).length + roster.benchSlots.length;
       const openMainSlots = Math.max(0, 15 - activeMainPlayers);
       const openIrSlots = Math.max(0, 3 - roster.reserveSlots.length);
-      const incomingIrEligibleCount = incomingPlayers.filter((p) => {
-        const slot = playerSlotById.get(p.playerId)?.slot;
-        return Boolean(
-          slot &&
-            (slot.injuryStatus === 'Out' ||
-              slot.injuryStatus === 'IR' ||
-              slot.slotLabel === 'IR')
-        );
-      }).length;
+      const incomingIrEligibleCount = incomingPlayers.filter((p) =>
+        isIrOrOutSlot(playerSlotById.get(p.playerId)?.slot)
+      ).length;
       const absorbedByIr = Math.min(openIrSlots, incomingIrEligibleCount);
       effectiveExcessPlayers = Math.max(
         0,
@@ -802,14 +836,42 @@ export function evaluateDynastyTrade(params: {
       centerImpactSummary = `${centerDepthDelta} C depth (${preTradeCenterCount} → ${postTradeCenterCount} Centers) — thins 2-Center coverage${postTradeCenterCount < 2 ? ' (WARNING: fewer than 2 required Centers!)' : '.'}`;
     }
 
-    // Composite Grade Score combining Axis 1 (Adjusted Package Dynasty Value) and Axis 2 (Starting 10 Δ Avg Lock-In)
-    // When acquiring draft picks or positive Dynasty Value in a rebuild, dampen negative Starting 10 Δ Avg Lock-In
-    const lockInWeight =
-      adjustedDynastyDelta > 0 && starting10DeltaAvgLockIn < 0 && incomingPicks.length > 0
-        ? 0.9
-        : 2.2;
+    // Composite Grade Score combining Axis 1 (Adjusted Package Dynasty Value) and soft-compressed Axis 2 (Starting 10 Δ Avg Lock-In)
+    const effectiveLiDelta = compressAxis2Delta(starting10DeltaAvgLockIn);
+    let lockInWeight: number;
+    if (starting10DeltaAvgLockIn < 0) {
+      const baseNegativeWeight = evaluationMode === 'HISTORICAL' ? 1.65 : 1.5;
+      const hasSidelinedDynastyAsset = incomingPlayers.some(
+        (p) =>
+          p.dynastyValue >= 25.0 &&
+          (p.avgLockIn === 0 ||
+            p.dynastyValueSource === 'BASELINE_ESTIMATE' ||
+            isIrOrOutSlot(playerSlotById.get(p.playerId)?.slot))
+      );
+      const hasFutureOrSidelinedFocus =
+        incomingPicks.length > 0 || averageAgeDelta <= -0.4 || hasSidelinedDynastyAsset;
+
+      if (!hasFutureOrSidelinedFocus || adjustedDynastyDelta <= -10.0) {
+        lockInWeight = baseNegativeWeight;
+      } else if (adjustedDynastyDelta >= -4.0) {
+        lockInWeight = 0.65;
+      } else {
+        const rampProgress = (-4.0 - adjustedDynastyDelta) / 6.0;
+        lockInWeight = 0.65 + (baseNegativeWeight - 0.65) * rampProgress;
+      }
+    } else if (evaluationMode === 'HISTORICAL') {
+      lockInWeight = 1.65;
+    } else {
+      const preArchetype = archetypeByRosterId.get(part.rosterId);
+      const isContender =
+        preTradeOptimalStarterAvgLockIn >= top5ContenderThreshold ||
+        preArchetype === 'Title Favorite' ||
+        preArchetype === 'Young Juggernaut' ||
+        postTradeOptimalStarterAvgLockIn >= top5ContenderThreshold;
+      lockInWeight = isContender ? 2.2 : 1.5;
+    }
     const compositeGradeScore =
-      Math.round((adjustedDynastyDelta + starting10DeltaAvgLockIn * lockInWeight) * 10) / 10;
+      Math.round((adjustedDynastyDelta + effectiveLiDelta * lockInWeight) * 10) / 10;
     const letterGrade = getTradeLetterGrade(compositeGradeScore);
 
     // Build Plain-English Takeaways
@@ -919,10 +981,11 @@ export function evaluateDynastyTrade(params: {
     };
   });
 
-  // Determine overall trade winner and Fairness Meter
+  // Determine overall trade winner and Timeline-Aware Dual-Axis Fairness Meter
   let winnerRosterId: number | null = null;
   let winnerRosterName: string | null = null;
   let netAdjustedSpread = 0;
+  let compositeSpread = 0;
 
   if (participantEvaluations.length >= 2) {
     const sortedByComposite = [...participantEvaluations].sort(
@@ -933,10 +996,13 @@ export function evaluateDynastyTrade(params: {
     const top = sortedByComposite[0];
     const bottom = sortedByComposite[sortedByComposite.length - 1];
     const deltas = participantEvaluations.map((p) => p.adjustedDynastyDelta);
+    const compositeScores = participantEvaluations.map((p) => p.compositeGradeScore);
     netAdjustedSpread =
-      Math.round((Math.max(...deltas) - Math.min(...deltas)) / 2 * 10) / 10;
+      Math.round(((Math.max(...deltas) - Math.min(...deltas)) / 2) * 10) / 10;
+    compositeSpread =
+      Math.round(((Math.max(...compositeScores) - Math.min(...compositeScores)) / 2) * 10) / 10;
 
-    if (top.compositeGradeScore - bottom.compositeGradeScore >= 1.5 || Math.abs(top.adjustedDynastyDelta) >= 1.5) {
+    if (top.compositeGradeScore - bottom.compositeGradeScore >= 2.5 || netAdjustedSpread >= 3.0) {
       winnerRosterId = top.rosterId;
       winnerRosterName = top.rosterName;
       for (const p of participantEvaluations) {
@@ -945,9 +1011,21 @@ export function evaluateDynastyTrade(params: {
     }
   }
 
+  const isCrossTimelineExchange =
+    participantEvaluations.some(
+      (p) => p.adjustedDynastyDelta > 2.0 && p.starting10DeltaAvgLockIn < -1.0
+    ) &&
+    participantEvaluations.some(
+      (p) => p.adjustedDynastyDelta < -2.0 && p.starting10DeltaAvgLockIn > 1.0
+    );
+
+  const effectiveFairnessSpread = isCrossTimelineExchange
+    ? Math.min(netAdjustedSpread, compositeSpread * 0.85)
+    : netAdjustedSpread;
+
   const fairnessScore = Math.max(
     0,
-    Math.min(100, Math.round(100 - netAdjustedSpread * 1.8))
+    Math.min(100, Math.round(100 - effectiveFairnessSpread * 1.4))
   );
 
   let fairnessLabel: TradeFairnessLabel = 'Balanced Trade';
@@ -960,9 +1038,11 @@ export function evaluateDynastyTrade(params: {
   }
 
   const summaryHeadline =
-    winnerRosterName && netAdjustedSpread >= 2
-      ? `${winnerRosterName} wins by +${netAdjustedSpread.toFixed(1)} Adjusted Dynasty Value (${fairnessLabel})`
-      : `Balanced MBA Dynasty Deal (${fairnessScore}/100 Fairness)`;
+    isCrossTimelineExchange && fairnessLabel === 'Balanced Trade'
+      ? `Cross-Timeline Win-Win Balance (${fairnessScore}/100 Fairness)`
+      : winnerRosterName && netAdjustedSpread >= 2
+        ? `${winnerRosterName} wins by +${netAdjustedSpread.toFixed(1)} Adjusted Dynasty Value (${fairnessLabel})`
+        : `Balanced MBA Dynasty Deal (${fairnessScore}/100 Fairness)`;
 
   return {
     participants: participantEvaluations,
