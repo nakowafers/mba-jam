@@ -78,7 +78,7 @@ function buildBaselineParts(params: {
 export function computePlayerDynastyValue(
   input: PlayerDynastyValuationInput
 ): PlayerDynastyValuation {
-  const gamesPlayed = input.gamesPlayed ?? 1;
+  const gamesPlayed = input.gamesPlayed ?? (input.actualFpg > 0 ? 10 : 0);
   const priorSeasonFpg = isPositiveNumber(input.priorSeasonFpg) ? input.priorSeasonFpg : null;
   const seasonProjectedFpg = isPositiveNumber(input.seasonProjectedFpg)
     ? input.seasonProjectedFpg
@@ -106,35 +106,33 @@ export function computePlayerDynastyValue(
       effectiveProjectedFpg !== null
         ? Math.round((0.75 * input.actualFpg + 0.25 * effectiveProjectedFpg) * 100) / 100
         : input.actualFpg;
-  } else if (gamesPlayed === 0) {
-    const estimateFpg = baselineFpg ?? effectiveProjectedFpg;
-    if (estimateFpg !== null) {
-      blendedFpg = Math.round(estimateFpg * 100) / 100;
-      dynastyValueSource = 'BASELINE_ESTIMATE';
-      const parts = buildBaselineParts({
-        priorSeasonFpg,
-        priorSeasonGamesPlayed: input.priorSeasonGamesPlayed,
-        seasonProjectedFpg,
-        weeklyProjectedFpg,
-      });
-      dynastyValueBasisNote = `0 GP — est. from ${parts.join(' & ')}`;
-    } else {
-      blendedFpg = input.actualFpg;
-    }
   } else {
-    // 0 < gamesPlayed < 10 with a positive baselineFpg
-    const sampleWeight = gamesPlayed / 10;
-    const actualWeight = 0.75 * sampleWeight;
-    blendedFpg =
-      Math.round((actualWeight * input.actualFpg + (1 - actualWeight) * baselineFpg!) * 100) / 100;
-    dynastyValueSource = 'SMALL_SAMPLE_BLENDED';
-    const parts = buildBaselineParts({
+    const baselineParts = buildBaselineParts({
       priorSeasonFpg,
       priorSeasonGamesPlayed: input.priorSeasonGamesPlayed,
       seasonProjectedFpg,
       weeklyProjectedFpg,
     });
-    dynastyValueBasisNote = `${gamesPlayed} GP — blended with ${parts.join(' & ')}`;
+
+    if (gamesPlayed === 0) {
+      const estimateFpg = baselineFpg ?? effectiveProjectedFpg;
+      if (estimateFpg !== null) {
+        blendedFpg = Math.round(estimateFpg * 100) / 100;
+        dynastyValueSource = 'BASELINE_ESTIMATE';
+        dynastyValueBasisNote = `0 GP — est. from ${baselineParts.join(' & ')}`;
+      } else {
+        blendedFpg = input.actualFpg;
+      }
+    } else {
+      // 0 < gamesPlayed < 10 with a positive baselineFpg
+      const sampleWeight = gamesPlayed / 10;
+      const actualWeight = 0.75 * sampleWeight;
+      blendedFpg =
+        Math.round((actualWeight * input.actualFpg + (1 - actualWeight) * baselineFpg!) * 100) /
+        100;
+      dynastyValueSource = 'SMALL_SAMPLE_BLENDED';
+      dynastyValueBasisNote = `${gamesPlayed} GP — blended with ${baselineParts.join(' & ')}`;
+    }
   }
 
   const ageMultiplier = getDynastyAgeMultiplier(input.age);

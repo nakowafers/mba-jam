@@ -75,6 +75,18 @@ function getStoreGameCountMap(store: ManagerStateStore): Map<string, number> {
   return map;
 }
 
+function indexStatEntriesByPlayerId(
+  entries?: SleeperGameStatEntry[]
+): Map<string, SleeperGameStatEntry> {
+  const map = new Map<string, SleeperGameStatEntry>();
+  for (const entry of entries ?? []) {
+    if (entry.player_id) {
+      map.set(entry.player_id, entry);
+    }
+  }
+  return map;
+}
+
 export interface MbaLeagueEngineDeps {
   gateway: SleeperGateway;
   stateStore: ManagerStateStore;
@@ -499,28 +511,10 @@ export class MbaLeagueEngine {
       bundle.historicalMatchups
     );
 
-    // Index season stats by player_id
-    const seasonStatByPlayerId = new Map<string, SleeperGameStatEntry>();
-    for (const entry of bundle.seasonStats) {
-      if (entry.player_id) {
-        seasonStatByPlayerId.set(entry.player_id, entry);
-      }
-    }
-
-    // Index prior-season stats and full-season projections by player_id
-    const previousSeasonStatByPlayerId = new Map<string, SleeperGameStatEntry>();
-    for (const entry of bundle.previousSeasonStats ?? []) {
-      if (entry.player_id) {
-        previousSeasonStatByPlayerId.set(entry.player_id, entry);
-      }
-    }
-
-    const seasonProjByPlayerId = new Map<string, SleeperGameStatEntry>();
-    for (const entry of bundle.seasonProjections ?? []) {
-      if (entry.player_id) {
-        seasonProjByPlayerId.set(entry.player_id, entry);
-      }
-    }
+    // Index season stats, prior-season stats, and full-season projections by player_id
+    const seasonStatByPlayerId = indexStatEntriesByPlayerId(bundle.seasonStats);
+    const previousSeasonStatByPlayerId = indexStatEntriesByPlayerId(bundle.previousSeasonStats);
+    const seasonProjByPlayerId = indexStatEntriesByPlayerId(bundle.seasonProjections);
 
     // Index weekly completed games and remaining projections by player_id
     const weeklyCompletedByPlayerId = new Map<string, SleeperGameStatEntry[]>();
