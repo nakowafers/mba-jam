@@ -647,7 +647,8 @@ export type TradeLetterGrade =
   | 'C'
   | 'C-'
   | 'D'
-  | 'F';
+  | 'F'
+  | 'N/A';
 
 export interface TradeParticipantProposal {
   rosterId: number;
@@ -657,9 +658,12 @@ export interface TradeParticipantProposal {
   incomingPickIds?: string[];
 }
 
+export type TradeEvaluationMode = 'LIVE' | 'HISTORICAL';
+
 export interface TradeProposal {
   participants: TradeParticipantProposal[];
   pickTierOverrides?: Record<string, ProjectedPickTier>;
+  evaluationMode?: TradeEvaluationMode;
 }
 
 export interface ReplacementCutAsset {
@@ -699,9 +703,11 @@ export interface EvaluatedTradePlayerAsset extends FlippedAssetMetadata {
   toRosterId: number;
 }
 
+export type EvaluatedDraftPickSeason = DraftPickSeason | '2025';
+
 export interface EvaluatedTradePickAsset extends FlippedAssetMetadata {
   pickId: string;
-  season: DraftPickSeason;
+  season: EvaluatedDraftPickSeason;
   round: 1 | 2;
   originalRosterId: number;
   originalRosterName: string;
@@ -768,7 +774,8 @@ export type TradeFairnessLabel =
   | 'Balanced Trade'
   | 'Slight Edge'
   | 'Lopsided Trade'
-  | 'Fleecing Alert';
+  | 'Fleecing Alert'
+  | 'Settlement Transfer';
 
 export interface TradeEvaluationResult {
   participants: TradeParticipantEvaluation[];
@@ -776,6 +783,7 @@ export interface TradeEvaluationResult {
   fairnessLabel: TradeFairnessLabel;
   winnerRosterId: number | null;
   winnerRosterName: string | null;
+  isSettlementTransfer: boolean;
   netAdjustedSpread: number;
   summaryHeadline: string;
   appliedPickTierOverrides: Record<string, ProjectedPickTier>;
@@ -792,6 +800,8 @@ export type HistoricalTradeSeasonFilter = '2026' | '2025' | 'ALL';
 export interface HistoricalTradeFilterOptions {
   season?: HistoricalTradeSeasonFilter;
   rosterId?: number | null;
+  /** Defaults to true. When false, Settlement Transfers are omitted (Flipped Asset links are still computed on the full history). */
+  includeSettlements?: boolean;
 }
 
 export type RequiredFlippedAssetFields = {
@@ -824,6 +834,7 @@ export interface GradedHistoricalTrade {
   winnerRosterName: string | null;
   fairnessScore: number;
   fairnessLabel: TradeFairnessLabel;
+  isSettlementTransfer: boolean;
   netAdjustedSpread: number;
   summaryHeadline: string;
   flippedAssets: FlippedAssetChainRecord[];

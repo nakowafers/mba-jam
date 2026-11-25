@@ -23,10 +23,16 @@ import {
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
 import { DynastyValueEstBadge } from '@/components/trades/dynasty-value-est-badge';
 import {
+  getFairnessBarColorClass,
+  ReplacementCutAdjustmentNote,
+  TRADE_FAIRNESS_BADGE_STYLES,
+  TradeGradeBadge,
+} from '@/components/trades/trade-display-helpers';
+import {
   DraftPickAsset,
+  HydratedRoster,
   ProjectedPickTier,
   RosterPlayerSlot,
-  TradeLetterGrade,
   TradeParticipantEvaluation,
   TradeProposal,
 } from '@/lib/types/mba';
@@ -58,26 +64,111 @@ const SAMPLE_PASTED_TRADES = [
   },
 ];
 
-function GradeBadge({ grade }: { grade: TradeLetterGrade }) {
-  const isA = grade.startsWith('A');
-  const isB = grade.startsWith('B');
-  const isC = grade.startsWith('C');
+function deriveBuilderStateFromProposal(
+  proposal: TradeProposal,
+  rosters: HydratedRoster[],
+  allPicks: DraftPickAsset[]
+): {
+  teamCount: 2 | 3;
+  selectedRosterIds: number[];
+  directedPlayers: DirectedPlayerAsset[];
+  directedPicks: DirectedPickAsset[];
+  pickTierOverrides: Record<string, ProjectedPickTier>;
+} | null {
+  if (!proposal.participants || proposal.participants.length < 2) return null;
+  const count: 2 | 3 = proposal.participants.length >= 3 ? 3 : 2;
+  const pIds = proposal.participants.slice(0, count).map((p) => p.rosterId);
+  const fallbackThird = rosters.find((r) => !pIds.includes(r.rosterId))?.rosterId ?? 4;
 
-  const style = isA
-    ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 shadow-emerald-950/50'
-    : isB
-      ? 'border-sky-500/50 bg-sky-500/20 text-sky-300 shadow-sky-950/50'
-      : isC
-        ? 'border-amber-500/50 bg-amber-500/20 text-amber-300 shadow-amber-950/50'
-        : 'border-rose-500/50 bg-rose-500/20 text-rose-300 shadow-rose-950/50';
+  const nextPlayers: DirectedPlayerAsset[] = [];
+  const nextPicks: DirectedPickAsset[] = [];
 
-  return (
-    <div
-      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 font-mono text-2xl font-black shadow-lg ${style}`}
-    >
-      {grade}
-    </div>
-  );
+  const ownerByPlayerId = new Map<string, number>();
+  for (const r of rosters) {
+    for (const p of r.allPlayers) {
+      ownerByPlayerId.set(p.playerId, r.rosterId);
+    }
+  }
+  const ownerByPickId = new Map<string, number>();
+  for (const pk of allPicks) {
+    ownerByPickId.set(pk.id, pk.currentOwnerRosterId);
+  }
+
+  for (let i = 0; i < proposal.participants.length && i < count; i++) {
+    const part = proposal.participants[i];
+    const otherDefaultId = proposal.participants[(i + 1) % count].rosterId;
+
+    for (const inPid of part.incomingPlayerIds ?? []) {
+      const explicitSender = proposal.participants.find(
+        (other) =>
+          other.rosterId !== part.rosterId && (other.outgoingPlayerIds ?? []).includes(inPid)
+      )?.rosterId;
+      const fromRosterId =
+        explicitSender ??
+        (pIds.includes(ownerByPlayerId.get(inPid) ?? -1) &&
+        ownerByPlayerId.get(inPid) !== part.rosterId
+          ? ownerByPlayerId.get(inPid)!
+          : otherDefaultId);
+      if (!nextPlayers.some((x) => x.playerId === inPid && x.toRosterId === part.rosterId)) {
+        nextPlayers.push({
+          playerId: inPid,
+          fromRosterId,
+          toRosterId: part.rosterId,
+        });
+      }
+    }
+
+    for (const inPickId of part.incomingPickIds ?? []) {
+      const explicitSender = proposal.participants.find(
+        (other) =>
+          other.rosterId !== part.rosterId && (other.outgoingPickIds ?? []).includes(inPickId)
+      )?.rosterId;
+      const fromRosterId =
+        explicitSender ??
+        (pIds.includes(ownerByPickId.get(inPickId) ?? -1) &&
+        ownerByPickId.get(inPickId) !== part.rosterId
+          ? ownerByPickId.get(inPickId)!
+          : otherDefaultId);
+      if (!nextPicks.some((x) => x.pickId === inPickId && x.toRosterId === part.rosterId)) {
+        nextPicks.push({
+          pickId: inPickId,
+          fromRosterId,
+          toRosterId: part.rosterId,
+        });
+      }
+    }
+  }
+
+  for (let i = 0; i < proposal.participants.length && i < count; i++) {
+    const part = proposal.participants[i];
+    const otherDefaultId = proposal.participants[(i + 1) % count].rosterId;
+    for (const outPid of part.outgoingPlayerIds ?? []) {
+      if (!nextPlayers.some((x) => x.playerId === outPid)) {
+        nextPlayers.push({
+          playerId: outPid,
+          fromRosterId: part.rosterId,
+          toRosterId: otherDefaultId,
+        });
+      }
+    }
+    for (const outPickId of part.outgoingPickIds ?? []) {
+      if (!nextPicks.some((x) => x.pickId === outPickId)) {
+        nextPicks.push({
+          pickId: outPickId,
+          fromRosterId: part.rosterId,
+          toRosterId: otherDefaultId,
+        });
+      }
+    }
+  }
+
+  return {
+    teamCount: count,
+    selectedRosterIds: count === 3 ? pIds : [pIds[0], pIds[1], fallbackThird],
+    directedPlayers: nextPlayers,
+    directedPicks: nextPicks,
+    pickTierOverrides: proposal.pickTierOverrides ?? {},
+  };
 }
 
 export function DynastyTradeBuilder({
@@ -89,23 +180,43 @@ export function DynastyTradeBuilder({
 } = {}) {
   const { engine, snapshot, activeRosterId } = useMbaLeague();
 
-  const [teamCount, setTeamCount] = useState<2 | 3>(2);
+  const pickMatrix = useMemo(
+    () => engine.getDraftPickMatrix(snapshot),
+    [engine, snapshot]
+  );
+
+  const initialBuilderState = useMemo(() => {
+    if (externalProposal) {
+      return deriveBuilderStateFromProposal(externalProposal, snapshot.rosters, pickMatrix.allPicks);
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [teamCount, setTeamCount] = useState<2 | 3>(initialBuilderState?.teamCount ?? 2);
   const [selectedRosterIds, setSelectedRosterIds] = useState<number[]>(() => {
+    if (initialBuilderState) return initialBuilderState.selectedRosterIds;
     const first = activeRosterId || 1;
     const second = first === 10 ? 1 : 10;
     return [first, second, 4];
   });
 
   // Default seeded trade so the Grade Card is immediately interactive on first visit
-  const [directedPlayers, setDirectedPlayers] = useState<DirectedPlayerAsset[]>([
-    { playerId: '1883', fromRosterId: 1, toRosterId: 10 }, // Alperen Sengun
-    { playerId: 'r10_p5', fromRosterId: 10, toRosterId: 1 }, // Giannis Antetokounmpo
-  ]);
-  const [directedPicks, setDirectedPicks] = useState<DirectedPickAsset[]>([
-    { pickId: '2027-r1-orig-6', fromRosterId: 1, toRosterId: 10 },
-    { pickId: '2028-r1-orig-10', fromRosterId: 1, toRosterId: 10 },
-  ]);
-  const [pickTierOverrides, setPickTierOverrides] = useState<Record<string, ProjectedPickTier>>({});
+  const [directedPlayers, setDirectedPlayers] = useState<DirectedPlayerAsset[]>(
+    initialBuilderState?.directedPlayers ?? [
+      { playerId: '1883', fromRosterId: 1, toRosterId: 10 }, // Alperen Sengun
+      { playerId: 'r10_p5', fromRosterId: 10, toRosterId: 1 }, // Giannis Antetokounmpo
+    ]
+  );
+  const [directedPicks, setDirectedPicks] = useState<DirectedPickAsset[]>(
+    initialBuilderState?.directedPicks ?? [
+      { pickId: '2027-r1-orig-6', fromRosterId: 1, toRosterId: 10 },
+      { pickId: '2028-r1-orig-10', fromRosterId: 1, toRosterId: 10 },
+    ]
+  );
+  const [pickTierOverrides, setPickTierOverrides] = useState<Record<string, ProjectedPickTier>>(
+    initialBuilderState?.pickTierOverrides ?? {}
+  );
 
   // Search/filter state per Roster panel
   const [playerSearchByRoster, setPlayerSearchByRoster] = useState<Record<number, string>>({});
@@ -119,11 +230,6 @@ export function DynastyTradeBuilder({
   // Shareable URL state
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const pickMatrix = useMemo(
-    () => engine.getDraftPickMatrix(snapshot),
-    [engine, snapshot]
-  );
-
   const activeParticipantIds = useMemo(
     () => selectedRosterIds.slice(0, teamCount),
     [selectedRosterIds, teamCount]
@@ -132,104 +238,13 @@ export function DynastyTradeBuilder({
   // Apply a structured TradeProposal into builder state
   const applyProposalToState = useCallback(
     (proposal: TradeProposal) => {
-      if (!proposal.participants || proposal.participants.length < 2) return;
-      const count: 2 | 3 = proposal.participants.length >= 3 ? 3 : 2;
-      setTeamCount(count);
-
-      const pIds = proposal.participants.slice(0, count).map((p) => p.rosterId);
-      const fallbackThird =
-        snapshot.rosters.find((r) => !pIds.includes(r.rosterId))?.rosterId ?? 4;
-      setSelectedRosterIds(count === 3 ? pIds : [pIds[0], pIds[1], fallbackThird]);
-
-      const nextPlayers: DirectedPlayerAsset[] = [];
-      const nextPicks: DirectedPickAsset[] = [];
-
-      // Map player ownership across the league to infer sender when only incoming is listed
-      const ownerByPlayerId = new Map<string, number>();
-      for (const r of snapshot.rosters) {
-        for (const p of r.allPlayers) {
-          ownerByPlayerId.set(p.playerId, r.rosterId);
-        }
-      }
-      const ownerByPickId = new Map<string, number>();
-      for (const pk of pickMatrix.allPicks) {
-        ownerByPickId.set(pk.id, pk.currentOwnerRosterId);
-      }
-
-      for (let i = 0; i < proposal.participants.length && i < count; i++) {
-        const part = proposal.participants[i];
-        const otherDefaultId = proposal.participants[(i + 1) % count].rosterId;
-
-        for (const inPid of part.incomingPlayerIds ?? []) {
-          const explicitSender = proposal.participants.find(
-            (other) =>
-              other.rosterId !== part.rosterId &&
-              (other.outgoingPlayerIds ?? []).includes(inPid)
-          )?.rosterId;
-          const fromRosterId =
-            explicitSender ??
-            (pIds.includes(ownerByPlayerId.get(inPid) ?? -1) &&
-            ownerByPlayerId.get(inPid) !== part.rosterId
-              ? ownerByPlayerId.get(inPid)!
-              : otherDefaultId);
-          if (!nextPlayers.some((x) => x.playerId === inPid && x.toRosterId === part.rosterId)) {
-            nextPlayers.push({
-              playerId: inPid,
-              fromRosterId,
-              toRosterId: part.rosterId,
-            });
-          }
-        }
-
-        for (const inPickId of part.incomingPickIds ?? []) {
-          const explicitSender = proposal.participants.find(
-            (other) =>
-              other.rosterId !== part.rosterId &&
-              (other.outgoingPickIds ?? []).includes(inPickId)
-          )?.rosterId;
-          const fromRosterId =
-            explicitSender ??
-            (pIds.includes(ownerByPickId.get(inPickId) ?? -1) &&
-            ownerByPickId.get(inPickId) !== part.rosterId
-              ? ownerByPickId.get(inPickId)!
-              : otherDefaultId);
-          if (!nextPicks.some((x) => x.pickId === inPickId && x.toRosterId === part.rosterId)) {
-            nextPicks.push({
-              pickId: inPickId,
-              fromRosterId,
-              toRosterId: part.rosterId,
-            });
-          }
-        }
-      }
-
-      // Also include any outgoing items that weren't already added via incoming
-      for (let i = 0; i < proposal.participants.length && i < count; i++) {
-        const part = proposal.participants[i];
-        const otherDefaultId = proposal.participants[(i + 1) % count].rosterId;
-        for (const outPid of part.outgoingPlayerIds ?? []) {
-          if (!nextPlayers.some((x) => x.playerId === outPid)) {
-            nextPlayers.push({
-              playerId: outPid,
-              fromRosterId: part.rosterId,
-              toRosterId: otherDefaultId,
-            });
-          }
-        }
-        for (const outPickId of part.outgoingPickIds ?? []) {
-          if (!nextPicks.some((x) => x.pickId === outPickId)) {
-            nextPicks.push({
-              pickId: outPickId,
-              fromRosterId: part.rosterId,
-              toRosterId: otherDefaultId,
-            });
-          }
-        }
-      }
-
-      setDirectedPlayers(nextPlayers);
-      setDirectedPicks(nextPicks);
-      setPickTierOverrides(proposal.pickTierOverrides ?? {});
+      const derived = deriveBuilderStateFromProposal(proposal, snapshot.rosters, pickMatrix.allPicks);
+      if (!derived) return;
+      setTeamCount(derived.teamCount);
+      setSelectedRosterIds(derived.selectedRosterIds);
+      setDirectedPlayers(derived.directedPlayers);
+      setDirectedPicks(derived.directedPicks);
+      setPickTierOverrides(derived.pickTierOverrides);
     },
     [pickMatrix.allPicks, snapshot.rosters]
   );
@@ -563,64 +578,83 @@ export function DynastyTradeBuilder({
       )}
 
       {/* Fairness Meter & Executive Trade Summary Banner */}
-      {totalAssetsInTrade > 0 && (
-        <section
-          aria-label="Trade Fairness Meter & Dual-Axis Summary"
-          data-testid="trade-fairness-banner"
-          className="rounded-2xl border border-slate-800 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 p-5 shadow-xl"
-        >
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/30">
-                <Scale className="h-5 w-5" />
+      {totalAssetsInTrade > 0 &&
+        (evaluation.isSettlementTransfer ? (
+          <section
+            aria-label="Incomplete Trade Proposal Prompt"
+            data-testid="incomplete-proposal-banner"
+            className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 p-5 shadow-xl"
+          >
+            <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Mid-Build Proposal
+                    </span>
+                    <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 font-mono text-[11px] font-bold text-amber-200 ring-1 ring-amber-500/30">
+                      Not Yet Graded (N/A)
+                    </span>
+                  </div>
+                  <h2 className="mt-1 text-lg font-extrabold text-white">
+                    {evaluation.summaryHeadline}
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Every participating Roster needs at least one incoming and one outgoing asset before Dual-Axis Trade Grades and Fairness scoring are computed.
+                  </p>
+                </div>
               </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-orange-300">
-                    ADR-0002 Dual-Axis Verdict
-                  </span>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-bold ${
-                      evaluation.fairnessLabel === 'Balanced Trade'
-                        ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40'
-                        : evaluation.fairnessLabel === 'Slight Edge'
-                          ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40'
-                          : 'bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40'
-                    }`}
-                  >
-                    {evaluation.fairnessLabel} ({evaluation.fairnessScore}/100 Fairness)
+            </div>
+          </section>
+        ) : (
+          <section
+            aria-label="Trade Fairness Meter & Dual-Axis Summary"
+            data-testid="trade-fairness-banner"
+            className="rounded-2xl border border-slate-800 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 p-5 shadow-xl"
+          >
+            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/30">
+                  <Scale className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-orange-300">
+                      ADR-0002 Dual-Axis Verdict
+                    </span>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-bold ${TRADE_FAIRNESS_BADGE_STYLES[evaluation.fairnessLabel]}`}
+                    >
+                      {evaluation.fairnessLabel} ({evaluation.fairnessScore}/100 Fairness)
+                    </span>
+                  </div>
+                  <h2 className="mt-1 text-lg font-extrabold text-white">
+                    {evaluation.summaryHeadline}
+                  </h2>
+                </div>
+              </div>
+
+              {/* Visual Fairness Gauge */}
+              <div className="w-full max-w-sm space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-400">Fairness Index</span>
+                  <span className="font-mono font-bold text-white">
+                    {evaluation.fairnessScore}% • Net Spread {evaluation.netAdjustedSpread.toFixed(1)} pts
                   </span>
                 </div>
-                <h2 className="mt-1 text-lg font-extrabold text-white">
-                  {evaluation.summaryHeadline}
-                </h2>
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className={`h-full rounded-full transition-all ${getFairnessBarColorClass(evaluation.fairnessScore)}`}
+                    style={{ width: `${Math.max(8, evaluation.fairnessScore)}%` }}
+                  />
+                </div>
               </div>
             </div>
-
-            {/* Visual Fairness Gauge */}
-            <div className="w-full max-w-sm space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-400">Fairness Index</span>
-                <span className="font-mono font-bold text-white">
-                  {evaluation.fairnessScore}% • Net Spread {evaluation.netAdjustedSpread.toFixed(1)} pts
-                </span>
-              </div>
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    evaluation.fairnessScore >= 80
-                      ? 'bg-emerald-500'
-                      : evaluation.fairnessScore >= 60
-                        ? 'bg-amber-400'
-                        : 'bg-rose-500'
-                  }`}
-                  style={{ width: `${Math.max(8, evaluation.fairnessScore)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
+          </section>
+        ))}
 
       {/* Dual-Axis Grade Cards for Each Participating Roster */}
       <section
@@ -685,7 +719,7 @@ export function DynastyTradeBuilder({
                     </select>
                   </div>
 
-                  <GradeBadge grade={part.letterGrade} />
+                  <TradeGradeBadge grade={part.letterGrade} />
                 </div>
 
                 {/* Dual-Axis Metrics Strip */}
@@ -914,31 +948,38 @@ export function DynastyTradeBuilder({
                         </div>
                       )}
 
-                      {part.replacementCutAssets.length > 0 && (
-                        <div
-                          data-testid={`replacement-cut-callout-${part.rosterId}`}
-                          className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-rose-200"
-                        >
-                          <div className="flex items-center justify-between font-semibold">
-                            <span className="flex items-center gap-1.5">
-                              <Scissors className="h-3.5 w-3.5 text-rose-400" />
-                              <span>
-                                Replacement Cut Asset Penalty ({part.replacementCutAssets.length} Bench Drop
-                                {part.replacementCutAssets.length > 1 ? 's' : ''})
+                      {part.replacementCutAssets.length > 0 && (() => {
+                        const hasStarterFallback = part.replacementCutAssets.some(
+                          (c) => c.slotLabel !== 'BN'
+                        );
+                        return (
+                          <div
+                            data-testid={`replacement-cut-callout-${part.rosterId}`}
+                            className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-rose-200"
+                          >
+                            <div className="flex items-center justify-between font-semibold">
+                              <span className="flex items-center gap-1.5">
+                                <Scissors className="h-3.5 w-3.5 text-rose-400" />
+                                <span>
+                                  Replacement Cut Asset Penalty ({part.replacementCutAssets.length}{' '}
+                                  {hasStarterFallback ? 'Roster' : 'Bench'} Drop
+                                  {part.replacementCutAssets.length > 1 ? 's' : ''})
+                                </span>
                               </span>
-                            </span>
-                            <span className="font-mono font-bold text-rose-300">
-                              -{part.replacementCutPenalty.toFixed(1)}
-                            </span>
+                              <span className="font-mono font-bold text-rose-300">
+                                -{part.replacementCutPenalty.toFixed(1)}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-rose-300/90">
+                              Must displace lowest-value {hasStarterFallback ? 'BN/Starter' : 'BN'}:{' '}
+                              {part.replacementCutAssets
+                                .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)})`)
+                                .join(', ')}
+                            </div>
+                            <ReplacementCutAdjustmentNote participant={part} />
                           </div>
-                          <div className="mt-1 text-[11px] text-rose-300/90">
-                            Must displace lowest-value BN:{' '}
-                            {part.replacementCutAssets
-                              .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)})`)
-                              .join(', ')}
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

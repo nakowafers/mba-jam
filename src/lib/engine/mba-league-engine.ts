@@ -60,6 +60,7 @@ import {
   StageLineupPayload,
   StagedLineupChecklist,
   StarterSlotType,
+  TradeEvaluationMode,
   TradeEvaluationResult,
   TradeProposal,
 } from '../types/mba';
@@ -186,24 +187,35 @@ export class MbaLeagueEngine {
    * Adjusted Package Dynasty Value (with Consolidation Premium & Replacement Cut Assets)
    * and Starting 10 Δ FP/G (pre-trade vs. post-trade optimal 10-starter lineup).
    */
-  public evaluateTrade(proposal: TradeProposal, snapshot: MbaLeagueSnapshot): TradeEvaluationResult;
-  public evaluateTrade(proposal: TradeProposal): Promise<TradeEvaluationResult>;
   public evaluateTrade(
     proposal: TradeProposal,
-    snapshot?: MbaLeagueSnapshot
+    snapshot: MbaLeagueSnapshot,
+    options?: { evaluationMode?: TradeEvaluationMode }
+  ): TradeEvaluationResult;
+  public evaluateTrade(
+    proposal: TradeProposal,
+    options?: { evaluationMode?: TradeEvaluationMode }
+  ): Promise<TradeEvaluationResult>;
+  public evaluateTrade(
+    proposal: TradeProposal,
+    snapshotOrOptions?: MbaLeagueSnapshot | { evaluationMode?: TradeEvaluationMode },
+    maybeOptions?: { evaluationMode?: TradeEvaluationMode }
   ): TradeEvaluationResult | Promise<TradeEvaluationResult> {
-    if (snapshot) {
+    if (snapshotOrOptions && 'rosters' in snapshotOrOptions) {
       return evaluateDynastyTrade({
         proposal,
-        snapshot,
+        snapshot: snapshotOrOptions,
         stateStore: this.stateStore,
+        evaluationMode: maybeOptions?.evaluationMode,
       });
     }
+    const evaluationMode = snapshotOrOptions?.evaluationMode;
     return this.getLeagueSnapshot().then((snap) =>
       evaluateDynastyTrade({
         proposal,
         snapshot: snap,
         stateStore: this.stateStore,
+        evaluationMode,
       })
     );
   }
