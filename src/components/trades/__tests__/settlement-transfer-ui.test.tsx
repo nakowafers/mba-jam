@@ -30,25 +30,25 @@ describe('Settlement Transfer UI — DynastyTradeBuilder & CompletedTradeGrader 
       );
 
     // 2-Roster unilateral mid-build: Roster 1 sends Victor Wembanyama ('1846'), Roster 2 sends nothing
-    const twoTeamPartialHtml = renderBuilder({
+    const twoRosterPartialHtml = renderBuilder({
       participants: [
         { rosterId: 1, outgoingPlayerIds: ['1846'], incomingPlayerIds: [] },
         { rosterId: 2, outgoingPlayerIds: [], incomingPlayerIds: ['1846'] },
       ],
     });
 
-    expect(twoTeamPartialHtml).toContain(
+    expect(twoRosterPartialHtml).toContain(
       'Incomplete Trade Proposal — Add Incoming & Outgoing Assets for Every Roster'
     );
-    expect(twoTeamPartialHtml).toContain('data-testid="incomplete-proposal-banner"');
-    expect(twoTeamPartialHtml).not.toContain('Fleecing Alert');
-    expect(twoTeamPartialHtml).not.toContain('0/100 Fairness');
-    expect(twoTeamPartialHtml).toContain('border-slate-600/60 bg-slate-800/70 text-slate-300');
-    expect(twoTeamPartialHtml.match(/>N\/A</g) ?? []).toHaveLength(2);
-    expect(twoTeamPartialHtml).not.toMatch(/rounded-2xl border-2 font-mono[^>]*>F</);
+    expect(twoRosterPartialHtml).toContain('data-testid="incomplete-proposal-banner"');
+    expect(twoRosterPartialHtml).not.toContain('Fleecing Alert');
+    expect(twoRosterPartialHtml).not.toContain('0/100 Fairness');
+    expect(twoRosterPartialHtml).toContain('border-slate-600/60 bg-slate-800/70 text-slate-300');
+    expect(twoRosterPartialHtml.match(/>N\/A</g) ?? []).toHaveLength(2);
+    expect(twoRosterPartialHtml).not.toMatch(/rounded-2xl border-2 font-mono[^>]*>F</);
 
     // 3-Roster partial mid-build: Roster 1 & 2 swap picks, Roster 3 has 0 incoming and 0 outgoing
-    const threeTeamPartialHtml = renderBuilder({
+    const threeRosterPartialHtml = renderBuilder({
       participants: [
         { rosterId: 1, outgoingPickIds: ['2026-r1-orig-1'], incomingPickIds: ['2026-r1-orig-2'] },
         { rosterId: 2, outgoingPickIds: ['2026-r1-orig-2'], incomingPickIds: ['2026-r1-orig-1'] },
@@ -56,9 +56,9 @@ describe('Settlement Transfer UI — DynastyTradeBuilder & CompletedTradeGrader 
       ],
     });
 
-    expect(threeTeamPartialHtml).toContain('data-testid="incomplete-proposal-banner"');
-    expect(threeTeamPartialHtml).not.toContain('Fleecing Alert');
-    const naBadges = threeTeamPartialHtml.match(/>N\/A</g) ?? [];
+    expect(threeRosterPartialHtml).toContain('data-testid="incomplete-proposal-banner"');
+    expect(threeRosterPartialHtml).not.toContain('Fleecing Alert');
+    const naBadges = threeRosterPartialHtml.match(/>N\/A</g) ?? [];
     expect(naBadges.length).toBe(3);
   });
 

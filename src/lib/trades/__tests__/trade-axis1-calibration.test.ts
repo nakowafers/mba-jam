@@ -590,4 +590,64 @@ describe('Axis 1 Trade Grade Calibration (#17) — MbaLeagueEngine Seam', () => 
       )
     ).toBe(true);
   });
+
+  it('omits 14.0 Waiver Replacement Baseline pick-offset attribution when the pick-offset cut has DV <= 3.0 and only the 24.0 drop ceiling reduced penalty', async () => {
+    const { engine } = createEngine();
+    const snapshot = await engine.getLeagueSnapshot();
+
+    const r1 = snapshot.rosters.find((r) => r.rosterId === 1)!;
+    const r2 = snapshot.rosters.find((r) => r.rosterId === 2)!;
+
+    // Roster #1 is 15/15 active (10 starters + 5 BN).
+    // Lowest two BN cuts: cut #1 = 2.5 DV (<= 3.0 floor, unaffected by pick-offset) and cut #2 = 38.0 DV (> 24.0 drop ceiling).
+    r1.benchSlots[0].dynastyValue = 70.0;
+    r1.benchSlots[1].dynastyValue = 65.0;
+    r1.benchSlots[2].dynastyValue = 60.0;
+    r1.benchSlots[3].dynastyValue = 38.0;
+    r1.benchSlots[4].dynastyValue = 2.5;
+
+    // 3 players in vs 1 player + 1 pick out -> 2 excess cuts, netOutgoingPicks === 1.
+    // Cut #1 (2.5 DV) receives the 1 pick-offset slot -> min(2.5, max(3.0, 2.5 - 14.0)) = 2.5 (no reduction).
+    // Cut #2 (38.0 DV) receives no pick-offset -> capped at 24.0 by the 24.0 drop ceiling.
+    // Total penalty = 26.5 vs 40.5 raw sum.
+    const multiCutEval = engine.evaluateTrade(
+      {
+        participants: [
+          {
+            rosterId: 1,
+            outgoingPlayerIds: [r1.starterSlots[1].playerId],
+            outgoingPickIds: ['2026-r1-orig-1'],
+            incomingPlayerIds: [
+              r2.starterSlots[1].playerId,
+              r2.benchSlots[0].playerId,
+              r2.benchSlots[1].playerId,
+            ],
+          },
+          {
+            rosterId: 2,
+            outgoingPlayerIds: [
+              r2.starterSlots[1].playerId,
+              r2.benchSlots[0].playerId,
+              r2.benchSlots[1].playerId,
+            ],
+            incomingPlayerIds: [r1.starterSlots[1].playerId],
+            incomingPickIds: ['2026-r1-orig-1'],
+          },
+        ],
+      },
+      snapshot
+    );
+
+    const side1 = multiCutEval.participants.find((p) => p.rosterId === 1)!;
+    expect(side1.replacementCutAssets).toHaveLength(2);
+    expect(side1.replacementCutPenalty).toBe(26.5);
+
+    const cutTakeaway = side1.takeaways.find((t) => t.includes('Replacement Cut Asset'))!;
+    expect(cutTakeaway).toBeDefined();
+    expect(cutTakeaway).toContain('26.5');
+    expect(cutTakeaway).toContain('40.5');
+    expect(cutTakeaway).toContain('24.0 drop ceiling');
+    expect(cutTakeaway).not.toContain('Waiver Replacement Baseline');
+    expect(cutTakeaway).not.toContain('pick-offset');
+  });
 });

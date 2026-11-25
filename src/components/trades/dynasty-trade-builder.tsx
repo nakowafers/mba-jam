@@ -22,13 +22,17 @@ import {
 } from 'lucide-react';
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
 import { DynastyValueEstBadge } from '@/components/trades/dynasty-value-est-badge';
-import { describeReplacementCutAdjustment } from '@/lib/trades/trade-analyzer';
+import {
+  getFairnessBarColorClass,
+  ReplacementCutAdjustmentNote,
+  TRADE_FAIRNESS_BADGE_STYLES,
+  TradeGradeBadge,
+} from '@/components/trades/trade-display-helpers';
 import {
   DraftPickAsset,
   HydratedRoster,
   ProjectedPickTier,
   RosterPlayerSlot,
-  TradeLetterGrade,
   TradeParticipantEvaluation,
   TradeProposal,
 } from '@/lib/types/mba';
@@ -59,31 +63,6 @@ const SAMPLE_PASTED_TRADES = [
     text: 'Roster 1 gets Luka Doncic + 2026 Early 1st, Roster 10 gets Devin Booker + 2028 2nd',
   },
 ];
-
-function GradeBadge({ grade }: { grade: TradeLetterGrade }) {
-  const isNA = grade === 'N/A';
-  const isA = grade.startsWith('A');
-  const isB = grade.startsWith('B');
-  const isC = grade.startsWith('C');
-
-  const style = isNA
-    ? 'border-slate-600/60 bg-slate-800/70 text-slate-300 shadow-slate-950/50 text-lg'
-    : isA
-      ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 shadow-emerald-950/50 text-2xl'
-      : isB
-        ? 'border-sky-500/50 bg-sky-500/20 text-sky-300 shadow-sky-950/50 text-2xl'
-        : isC
-          ? 'border-amber-500/50 bg-amber-500/20 text-amber-300 shadow-amber-950/50 text-2xl'
-          : 'border-rose-500/50 bg-rose-500/20 text-rose-300 shadow-rose-950/50 text-2xl';
-
-  return (
-    <div
-      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 font-mono font-black shadow-lg ${style}`}
-    >
-      {grade}
-    </div>
-  );
-}
 
 function deriveBuilderStateFromProposal(
   proposal: TradeProposal,
@@ -647,15 +626,7 @@ export function DynastyTradeBuilder({
                       ADR-0002 Dual-Axis Verdict
                     </span>
                     <span
-                      className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-bold ${
-                        evaluation.fairnessLabel === 'Balanced Trade'
-                          ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40'
-                          : evaluation.fairnessLabel === 'Slight Edge'
-                            ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40'
-                            : evaluation.fairnessLabel === 'Lopsided Trade'
-                              ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
-                              : 'bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40'
-                      }`}
+                      className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-bold ${TRADE_FAIRNESS_BADGE_STYLES[evaluation.fairnessLabel]}`}
                     >
                       {evaluation.fairnessLabel} ({evaluation.fairnessScore}/100 Fairness)
                     </span>
@@ -676,15 +647,7 @@ export function DynastyTradeBuilder({
                 </div>
                 <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
                   <div
-                    className={`h-full rounded-full transition-all ${
-                      evaluation.fairnessScore >= 85
-                        ? 'bg-emerald-500'
-                        : evaluation.fairnessScore >= 68
-                          ? 'bg-sky-500'
-                          : evaluation.fairnessScore >= 45
-                            ? 'bg-amber-400'
-                            : 'bg-rose-500'
-                    }`}
+                    className={`h-full rounded-full transition-all ${getFairnessBarColorClass(evaluation.fairnessScore)}`}
                     style={{ width: `${Math.max(8, evaluation.fairnessScore)}%` }}
                   />
                 </div>
@@ -756,7 +719,7 @@ export function DynastyTradeBuilder({
                     </select>
                   </div>
 
-                  <GradeBadge grade={part.letterGrade} />
+                  <TradeGradeBadge grade={part.letterGrade} />
                 </div>
 
                 {/* Dual-Axis Metrics Strip */}
@@ -986,12 +949,6 @@ export function DynastyTradeBuilder({
                       )}
 
                       {part.replacementCutAssets.length > 0 && (() => {
-                        const cutAdjustment = describeReplacementCutAdjustment({
-                          replacementCutAssets: part.replacementCutAssets,
-                          replacementCutPenalty: part.replacementCutPenalty,
-                          outgoingPicksCount: part.outgoingPicks.length,
-                          incomingPicksCount: part.incomingPicks.length,
-                        });
                         const hasStarterFallback = part.replacementCutAssets.some(
                           (c) => c.slotLabel !== 'BN'
                         );
@@ -1019,13 +976,7 @@ export function DynastyTradeBuilder({
                                 .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)})`)
                                 .join(', ')}
                             </div>
-                            {cutAdjustment.isReduced && (
-                              <div className="mt-1 text-[11px] text-amber-200/90">
-                                Gross {cutAdjustment.rawCutSum.toFixed(1)} DV reduced to -
-                                {part.replacementCutPenalty.toFixed(1)} via{' '}
-                                {cutAdjustment.reasons.join(' & ')}.
-                              </div>
-                            )}
+                            <ReplacementCutAdjustmentNote participant={part} />
                           </div>
                         );
                       })()}
