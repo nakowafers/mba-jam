@@ -61,21 +61,24 @@ const SAMPLE_PASTED_TRADES = [
 ];
 
 function GradeBadge({ grade }: { grade: TradeLetterGrade }) {
+  const isNA = grade === 'N/A';
   const isA = grade.startsWith('A');
   const isB = grade.startsWith('B');
   const isC = grade.startsWith('C');
 
-  const style = isA
-    ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 shadow-emerald-950/50'
-    : isB
-      ? 'border-sky-500/50 bg-sky-500/20 text-sky-300 shadow-sky-950/50'
-      : isC
-        ? 'border-amber-500/50 bg-amber-500/20 text-amber-300 shadow-amber-950/50'
-        : 'border-rose-500/50 bg-rose-500/20 text-rose-300 shadow-rose-950/50';
+  const style = isNA
+    ? 'border-slate-600/60 bg-slate-800/70 text-slate-300 shadow-slate-950/50 text-lg'
+    : isA
+      ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 shadow-emerald-950/50 text-2xl'
+      : isB
+        ? 'border-sky-500/50 bg-sky-500/20 text-sky-300 shadow-sky-950/50 text-2xl'
+        : isC
+          ? 'border-amber-500/50 bg-amber-500/20 text-amber-300 shadow-amber-950/50 text-2xl'
+          : 'border-rose-500/50 bg-rose-500/20 text-rose-300 shadow-rose-950/50 text-2xl';
 
   return (
     <div
-      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 font-mono text-2xl font-black shadow-lg ${style}`}
+      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 font-mono font-black shadow-lg ${style}`}
     >
       {grade}
     </div>
@@ -596,68 +599,99 @@ export function DynastyTradeBuilder({
       )}
 
       {/* Fairness Meter & Executive Trade Summary Banner */}
-      {totalAssetsInTrade > 0 && (
-        <section
-          aria-label="Trade Fairness Meter & Dual-Axis Summary"
-          data-testid="trade-fairness-banner"
-          className="rounded-2xl border border-slate-800 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 p-5 shadow-xl"
-        >
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/30">
-                <Scale className="h-5 w-5" />
+      {totalAssetsInTrade > 0 &&
+        (evaluation.isSettlementTransfer ? (
+          <section
+            aria-label="Incomplete Trade Proposal Prompt"
+            data-testid="incomplete-proposal-banner"
+            className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 p-5 shadow-xl"
+          >
+            <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Mid-Build Proposal
+                    </span>
+                    <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 font-mono text-[11px] font-bold text-amber-200 ring-1 ring-amber-500/30">
+                      Not Yet Graded (N/A)
+                    </span>
+                  </div>
+                  <h2 className="mt-1 text-lg font-extrabold text-white">
+                    {evaluation.summaryHeadline}
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Every participating Roster needs at least one incoming and one outgoing asset before Dual-Axis Trade Grades and Fairness scoring are computed.
+                  </p>
+                </div>
               </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-orange-300">
-                    ADR-0002 Dual-Axis Verdict
-                  </span>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-bold ${
-                      evaluation.fairnessLabel === 'Balanced Trade'
-                        ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40'
-                        : evaluation.fairnessLabel === 'Slight Edge'
-                          ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40'
-                          : evaluation.fairnessLabel === 'Lopsided Trade'
-                            ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
-                            : 'bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40'
-                    }`}
-                  >
-                    {evaluation.fairnessLabel} ({evaluation.fairnessScore}/100 Fairness)
+            </div>
+          </section>
+        ) : (
+          <section
+            aria-label="Trade Fairness Meter & Dual-Axis Summary"
+            data-testid="trade-fairness-banner"
+            className="rounded-2xl border border-slate-800 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 p-5 shadow-xl"
+          >
+            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/30">
+                  <Scale className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-orange-300">
+                      ADR-0002 Dual-Axis Verdict
+                    </span>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-bold ${
+                        evaluation.fairnessLabel === 'Balanced Trade'
+                          ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40'
+                          : evaluation.fairnessLabel === 'Slight Edge'
+                            ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40'
+                            : evaluation.fairnessLabel === 'Lopsided Trade'
+                              ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
+                              : 'bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40'
+                      }`}
+                    >
+                      {evaluation.fairnessLabel} ({evaluation.fairnessScore}/100 Fairness)
+                    </span>
+                  </div>
+                  <h2 className="mt-1 text-lg font-extrabold text-white">
+                    {evaluation.summaryHeadline}
+                  </h2>
+                </div>
+              </div>
+
+              {/* Visual Fairness Gauge */}
+              <div className="w-full max-w-sm space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-400">Fairness Index</span>
+                  <span className="font-mono font-bold text-white">
+                    {evaluation.fairnessScore}% • Net Spread {evaluation.netAdjustedSpread.toFixed(1)} pts
                   </span>
                 </div>
-                <h2 className="mt-1 text-lg font-extrabold text-white">
-                  {evaluation.summaryHeadline}
-                </h2>
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      evaluation.fairnessScore >= 85
+                        ? 'bg-emerald-500'
+                        : evaluation.fairnessScore >= 68
+                          ? 'bg-sky-500'
+                          : evaluation.fairnessScore >= 45
+                            ? 'bg-amber-400'
+                            : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${Math.max(8, evaluation.fairnessScore)}%` }}
+                  />
+                </div>
               </div>
             </div>
-
-            {/* Visual Fairness Gauge */}
-            <div className="w-full max-w-sm space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-400">Fairness Index</span>
-                <span className="font-mono font-bold text-white">
-                  {evaluation.fairnessScore}% • Net Spread {evaluation.netAdjustedSpread.toFixed(1)} pts
-                </span>
-              </div>
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    evaluation.fairnessScore >= 85
-                      ? 'bg-emerald-500'
-                      : evaluation.fairnessScore >= 68
-                        ? 'bg-sky-500'
-                        : evaluation.fairnessScore >= 45
-                          ? 'bg-amber-400'
-                          : 'bg-rose-500'
-                  }`}
-                  style={{ width: `${Math.max(8, evaluation.fairnessScore)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
+          </section>
+        ))}
 
       {/* Dual-Axis Grade Cards for Each Participating Roster */}
       <section

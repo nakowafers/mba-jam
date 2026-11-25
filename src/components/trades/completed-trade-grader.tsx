@@ -35,25 +35,58 @@ import {
 } from '@/lib/types/mba';
 
 function GradeBadge({ grade }: { grade: TradeLetterGrade }) {
+  const isNA = grade === 'N/A';
   const isA = grade.startsWith('A');
   const isB = grade.startsWith('B');
   const isC = grade.startsWith('C');
 
-  const style = isA
-    ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 shadow-emerald-950/50'
-    : isB
-      ? 'border-sky-500/50 bg-sky-500/20 text-sky-300 shadow-sky-950/50'
-      : isC
-        ? 'border-amber-500/50 bg-amber-500/20 text-amber-300 shadow-amber-950/50'
-        : 'border-rose-500/50 bg-rose-500/20 text-rose-300 shadow-rose-950/50';
+  const style = isNA
+    ? 'border-slate-600/60 bg-slate-800/70 text-slate-300 shadow-slate-950/50 text-base'
+    : isA
+      ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 shadow-emerald-950/50 text-xl'
+      : isB
+        ? 'border-sky-500/50 bg-sky-500/20 text-sky-300 shadow-sky-950/50 text-xl'
+        : isC
+          ? 'border-amber-500/50 bg-amber-500/20 text-amber-300 shadow-amber-950/50 text-xl'
+          : 'border-rose-500/50 bg-rose-500/20 text-rose-300 shadow-rose-950/50 text-xl';
 
   return (
     <div
-      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 font-mono text-xl font-black shadow-md ${style}`}
+      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 font-mono font-black shadow-md ${style}`}
     >
       {grade}
     </div>
   );
+}
+
+export interface HistoricalTradeFilterState {
+  seasonFilter: HistoricalTradeSeasonFilter;
+  rosterIdFilter: number | null;
+  includeSettlements: boolean;
+}
+
+/**
+ * Ensures active Completed Trade Grader filters reveal the target trade of a Flipped Asset jump,
+ * including automatically re-enabling Settlement Transfers when jumping to a Settlement Transfer.
+ */
+export function resolveFlippedTradeJumpFilters(
+  targetTrade: Pick<GradedHistoricalTrade, 'season' | 'rosterIds' | 'isSettlementTransfer'>,
+  current: HistoricalTradeFilterState
+): HistoricalTradeFilterState {
+  return {
+    seasonFilter:
+      current.seasonFilter !== 'ALL' && targetTrade.season !== current.seasonFilter
+        ? 'ALL'
+        : current.seasonFilter,
+    rosterIdFilter:
+      current.rosterIdFilter !== null && !targetTrade.rosterIds.includes(current.rosterIdFilter)
+        ? null
+        : current.rosterIdFilter,
+    includeSettlements:
+      !current.includeSettlements && targetTrade.isSettlementTransfer
+        ? true
+        : current.includeSettlements,
+  };
 }
 
 export function CompletedTradeGrader({
@@ -65,6 +98,7 @@ export function CompletedTradeGrader({
 
   const [seasonFilter, setSeasonFilter] = useState<HistoricalTradeSeasonFilter>('ALL');
   const [rosterIdFilter, setRosterIdFilter] = useState<number | null>(null);
+  const [includeSettlements, setIncludeSettlements] = useState<boolean>(true);
   const [expandedTradeIds, setExpandedTradeIds] = useState<Record<string, boolean>>(() => {
     const firstId = snapshot.historicalTrades?.[0]?.transactionId;
     return firstId ? { [firstId]: true } : {};
@@ -72,7 +106,7 @@ export function CompletedTradeGrader({
   const [highlightedTradeId, setHighlightedTradeId] = useState<string | null>(null);
 
   const allHistoricalTrades = useMemo(
-    () => engine.gradeHistoricalTrades({ season: 'ALL' }, snapshot),
+    () => engine.gradeHistoricalTrades({ season: 'ALL', includeSettlements: true }, snapshot),
     [engine, snapshot]
   );
 
@@ -82,11 +116,18 @@ export function CompletedTradeGrader({
         {
           season: seasonFilter,
           rosterId: rosterIdFilter,
+          includeSettlements,
         },
         snapshot
       ),
-    [engine, snapshot, seasonFilter, rosterIdFilter]
+    [engine, snapshot, seasonFilter, rosterIdFilter, includeSettlements]
   );
+
+  const settlementCount = useMemo(
+    () => allHistoricalTrades.filter((t) => t.isSettlementTransfer).length,
+    [allHistoricalTrades]
+  );
+  const competitiveGradedCount = allHistoricalTrades.length - settlementCount;
 
   const count2026 = useMemo(
     () => allHistoricalTrades.filter((t) => t.season === '2026').length,
@@ -109,17 +150,25 @@ export function CompletedTradeGrader({
   };
 
   const handleJumpToFlippedTrade = (targetTransactionId: string) => {
-    // Ensure filters allow target trade to be visible
+    // Ensure filters allow target trade to be visible (including Settlement Transfers)
     const targetTrade = allHistoricalTrades.find(
       (t) => t.transactionId === targetTransactionId
     );
     if (!targetTrade) return;
 
-    if (seasonFilter !== 'ALL' && targetTrade.season !== seasonFilter) {
-      setSeasonFilter('ALL');
+    const nextFilters = resolveFlippedTradeJumpFilters(targetTrade, {
+      seasonFilter,
+      rosterIdFilter,
+      includeSettlements,
+    });
+    if (nextFilters.seasonFilter !== seasonFilter) {
+      setSeasonFilter(nextFilters.seasonFilter);
     }
-    if (rosterIdFilter !== null && !targetTrade.rosterIds.includes(rosterIdFilter)) {
-      setRosterIdFilter(null);
+    if (nextFilters.rosterIdFilter !== rosterIdFilter) {
+      setRosterIdFilter(nextFilters.rosterIdFilter);
+    }
+    if (nextFilters.includeSettlements !== includeSettlements) {
+      setIncludeSettlements(nextFilters.includeSettlements);
     }
 
     setExpandedTradeIds((prev) => ({
@@ -149,13 +198,17 @@ export function CompletedTradeGrader({
       >
         <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            Total Graded Trades
+            Graded Trades
           </div>
-          <div className="mt-1 font-mono text-2xl font-black text-white">
-            {allHistoricalTrades.length}
+          <div
+            data-testid="graded-trades-count"
+            className="mt-1 font-mono text-2xl font-black text-white"
+          >
+            {competitiveGradedCount}
           </div>
           <div className="mt-0.5 text-[11px] text-slate-400">
-            ADR-0002 Dual-Axis Graded
+            {allHistoricalTrades.length} total • {settlementCount} Settlement Transfer
+            {settlementCount === 1 ? '' : 's'}
           </div>
         </div>
 
@@ -304,6 +357,24 @@ export function CompletedTradeGrader({
                 : `My Roster (#${activeRosterId})`}
             </span>
           </button>
+
+          <button
+            type="button"
+            data-testid="toggle-settlements-filter"
+            aria-pressed={!includeSettlements}
+            onClick={() => setIncludeSettlements((prev) => !prev)}
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${
+              !includeSettlements
+                ? 'border-amber-500/60 bg-amber-500/20 text-amber-200'
+                : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <span>
+              {includeSettlements
+                ? `Hide Settlements (${settlementCount})`
+                : `Show Settlements (${settlementCount} hidden)`}
+            </span>
+          </button>
         </div>
       </section>
 
@@ -322,6 +393,7 @@ export function CompletedTradeGrader({
             onClick={() => {
               setSeasonFilter('ALL');
               setRosterIdFilter(null);
+              setIncludeSettlements(true);
             }}
             className="mt-4 cursor-pointer rounded-xl bg-orange-500 px-4 py-2 text-xs font-extrabold text-slate-950 hover:bg-orange-400"
           >
@@ -384,18 +456,22 @@ export function CompletedTradeGrader({
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-xs font-bold ${
-                        trade.fairnessLabel === 'Balanced Trade'
-                          ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30'
-                          : trade.fairnessLabel === 'Slight Edge'
-                            ? 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30'
-                            : trade.fairnessLabel === 'Lopsided Trade'
-                              ? 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30'
-                              : 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30'
+                        trade.fairnessLabel === 'Settlement Transfer'
+                          ? 'bg-slate-800 text-slate-300 ring-1 ring-slate-600/50'
+                          : trade.fairnessLabel === 'Balanced Trade'
+                            ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30'
+                            : trade.fairnessLabel === 'Slight Edge'
+                              ? 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30'
+                              : trade.fairnessLabel === 'Lopsided Trade'
+                                ? 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30'
+                                : 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30'
                       }`}
                     >
                       <Scale className="h-3.5 w-3.5" />
                       <span>
-                        {trade.fairnessLabel} ({trade.fairnessScore}/100)
+                        {trade.fairnessLabel === 'Settlement Transfer'
+                          ? 'Settlement Transfer'
+                          : `${trade.fairnessLabel} (${trade.fairnessScore}/100)`}
                       </span>
                     </span>
 

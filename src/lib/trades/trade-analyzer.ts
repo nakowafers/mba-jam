@@ -1044,12 +1044,47 @@ export function evaluateDynastyTrade(params: {
         ? `${winnerRosterName} wins by +${netAdjustedSpread.toFixed(1)} Adjusted Dynasty Value (${fairnessLabel})`
         : `Balanced MBA Dynasty Deal (${fairnessScore}/100 Fairness)`;
 
+  // Atomic Settlement Transfer / incomplete-proposal contract: any Roster with 0 incoming or 0 outgoing
+  // assets resolves every Roster to N/A with no winner.
+  const assetCount = (p: TradeParticipantEvaluation, dir: 'incoming' | 'outgoing') =>
+    dir === 'incoming'
+      ? p.incomingPlayers.length + p.incomingPicks.length
+      : p.outgoingPlayers.length + p.outgoingPicks.length;
+  const hasEmptySide = participantEvaluations.some(
+    (p) => assetCount(p, 'incoming') === 0 || assetCount(p, 'outgoing') === 0
+  );
+  if (hasEmptySide) {
+    const totalAssets = participantEvaluations.reduce(
+      (sum, p) => sum + assetCount(p, 'incoming') + assetCount(p, 'outgoing'),
+      0
+    );
+    for (const p of participantEvaluations) {
+      p.letterGrade = 'N/A';
+      p.isWinner = false;
+    }
+    return {
+      participants: participantEvaluations,
+      fairnessScore,
+      fairnessLabel: 'Settlement Transfer',
+      winnerRosterId: null,
+      winnerRosterName: null,
+      isSettlementTransfer: totalAssets > 0,
+      netAdjustedSpread,
+      summaryHeadline:
+        evaluationMode === 'HISTORICAL'
+          ? 'Settlement Transfer — Unilateral Asset Move (Not Graded)'
+          : 'Incomplete Trade Proposal — Add Incoming & Outgoing Assets for Every Roster',
+      appliedPickTierOverrides,
+    };
+  }
+
   return {
     participants: participantEvaluations,
     fairnessScore,
     fairnessLabel,
     winnerRosterId,
     winnerRosterName,
+    isSettlementTransfer: false,
     netAdjustedSpread,
     summaryHeadline,
     appliedPickTierOverrides,
