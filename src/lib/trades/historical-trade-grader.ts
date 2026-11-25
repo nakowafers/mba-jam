@@ -199,6 +199,7 @@ export function evaluateHistoricalLeagueTrades(params: {
       winnerRosterName: evaluation.winnerRosterName,
       fairnessScore: evaluation.fairnessScore,
       fairnessLabel: evaluation.fairnessLabel,
+      isSettlementTransfer: evaluation.isSettlementTransfer,
       netAdjustedSpread: evaluation.netAdjustedSpread,
       summaryHeadline: evaluation.summaryHeadline,
       flippedAssets: [],
@@ -370,8 +371,12 @@ export function filterGradedHistoricalTrades(
 ): GradedHistoricalTrade[] {
   const seasonFilter = options?.season ?? 'ALL';
   const rosterIdFilter = options?.rosterId ?? null;
+  const includeSettlements = options?.includeSettlements ?? true;
 
   return trades.filter((trade) => {
+    if (!includeSettlements && trade.isSettlementTransfer) {
+      return false;
+    }
     if (seasonFilter !== 'ALL' && trade.season !== seasonFilter) {
       return false;
     }
