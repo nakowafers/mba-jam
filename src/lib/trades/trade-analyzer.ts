@@ -16,6 +16,7 @@ import {
   OptimalStarterAssignmentSlot,
   ProjectedPickTier,
   ReplacementCutAsset,
+  RosterArchetype,
   RosterPlayerSlot,
   StarterSlotType,
   TradeEvaluationMode,
@@ -196,6 +197,10 @@ export function solveOptimalStarting10Lineup(players: RosterPlayerSlot[]): {
   };
 }
 
+const MAX_REPLACEMENT_CUT_DV = 24.0;
+const WAIVER_REPLACEMENT_BASELINE = 14.0;
+const MIN_PICK_OFFSET_CUT_DV = 3.0;
+
 /**
  * Summarizes whether Replacement Cut Asset penalties were reduced by the 24.0 drop ceiling
  * and/or the 14.0 Waiver Replacement Baseline pick-offset.
@@ -215,14 +220,29 @@ export function describeReplacementCutAdjustment(params: {
   const rawCutSum =
     Math.round(replacementCutAssets.reduce((sum, c) => sum + c.dynastyValue, 0) * 10) / 10;
   const reasons: string[] = [];
-  if (replacementCutAssets.some((c) => c.dynastyValue > 24.0)) {
-    reasons.push('24.0 drop ceiling');
+  if (replacementCutAssets.some((c) => c.dynastyValue > MAX_REPLACEMENT_CUT_DV)) {
+    reasons.push(`${MAX_REPLACEMENT_CUT_DV.toFixed(1)} drop ceiling`);
   }
-  if (
-    replacementCutAssets.length > 0 &&
-    Math.max(0, outgoingPicksCount - incomingPicksCount) > 0
-  ) {
-    reasons.push('14.0 Waiver Replacement Baseline pick-offset');
+  const netOutgoingPicks = Math.max(0, outgoingPicksCount - incomingPicksCount);
+  if (replacementCutAssets.length > 0 && netOutgoingPicks > 0) {
+    const cutsSortedForOffset = [...replacementCutAssets].sort(
+      (a, b) => a.dynastyValue - b.dynastyValue
+    );
+    const pickOffsetReducedAnyCut = cutsSortedForOffset
+      .slice(0, netOutgoingPicks)
+      .some((cut) => {
+        const cappedDv = Math.min(cut.dynastyValue, MAX_REPLACEMENT_CUT_DV);
+        const effectiveCut = Math.min(
+          cappedDv,
+          Math.max(MIN_PICK_OFFSET_CUT_DV, cappedDv - WAIVER_REPLACEMENT_BASELINE)
+        );
+        return effectiveCut < cappedDv;
+      });
+    if (pickOffsetReducedAnyCut) {
+      reasons.push(
+        `${WAIVER_REPLACEMENT_BASELINE.toFixed(1)} Waiver Replacement Baseline pick-offset`
+      );
+    }
   }
   return {
     rawCutSum,
@@ -241,6 +261,36 @@ export function computeSingleAssetConsolidationBonus(dynastyValue: number): numb
   const tier2 = Math.max(0, dynastyValue - 72) * 0.35;
   const tier3 = Math.max(0, dynastyValue - 85) * 0.4;
   return Math.round((tier1 + tier2 + tier3) * 10) / 10;
+}
+
+/**
+ * Computes the multi-asset consolidation boost when acquiring a >58 cornerstone exceeding
+ * the counterparty's best asset by >3.0 DV, counting compressed NBA player slots and 1st-round picks.
+ */
+function computeMultiAssetConsolidationBoost(params: {
+  bestAcquiredValue: number;
+  bestCounterpartyValue: number;
+  acquiredPlayerCount: number;
+  counterpartyPlayerCount: number;
+  acquiredFirstRoundPicksCount: number;
+  counterpartyFirstRoundPicksCount: number;
+}): number {
+  const {
+    bestAcquiredValue,
+    bestCounterpartyValue,
+    acquiredPlayerCount,
+    counterpartyPlayerCount,
+    acquiredFirstRoundPicksCount,
+    counterpartyFirstRoundPicksCount,
+  } = params;
+  if (bestAcquiredValue <= 58 || bestAcquiredValue <= bestCounterpartyValue + 3) {
+    return 0;
+  }
+  return (
+    (bestAcquiredValue - bestCounterpartyValue) * 0.22 +
+    Math.max(0, counterpartyPlayerCount - acquiredPlayerCount) * 4.0 +
+    Math.max(0, counterpartyFirstRoundPicksCount - acquiredFirstRoundPicksCount) * 1.5
+  );
 }
 
 function isIrOrOutSlot(slot: RosterPlayerSlot | undefined): boolean {
@@ -468,7 +518,7 @@ export function evaluateDynastyTrade(params: {
 
   // Precompute LIVE Contender threshold (5th-highest optimal Starting 10 Avg Lock-In) & archetypes
   let top5ContenderThreshold = Infinity;
-  let archetypeByRosterId = new Map<number, string>();
+  let archetypeByRosterId = new Map<number, RosterArchetype>();
   if (evaluationMode === 'LIVE') {
     const rosterOptimalTotals = snapshot.rosters
       .map((r) => solveOptimalStarting10Lineup(r.allPlayers).totalAvgLockIn)
@@ -653,19 +703,23 @@ export function evaluateDynastyTrade(params: {
       outgoingPlayers.reduce((s, p) => s + p.consolidationPremium, 0) +
       outgoingPicks.reduce((s, p) => s + p.consolidationPremium, 0);
 
-    const multiAssetIncomingBoost =
-      bestIncoming > 58 && bestIncoming > bestOutgoing + 3
-        ? (bestIncoming - bestOutgoing) * 0.22 +
-          Math.max(0, outgoingPlayers.length - incomingPlayers.length) * 4.0 +
-          Math.max(0, outgoingFirstRoundPicksCount - incomingFirstRoundPicksCount) * 1.5
-        : 0;
+    const multiAssetIncomingBoost = computeMultiAssetConsolidationBoost({
+      bestAcquiredValue: bestIncoming,
+      bestCounterpartyValue: bestOutgoing,
+      acquiredPlayerCount: incomingPlayers.length,
+      counterpartyPlayerCount: outgoingPlayers.length,
+      acquiredFirstRoundPicksCount: incomingFirstRoundPicksCount,
+      counterpartyFirstRoundPicksCount: outgoingFirstRoundPicksCount,
+    });
 
-    const multiAssetOutgoingBoost =
-      bestOutgoing > 58 && bestOutgoing > bestIncoming + 3
-        ? (bestOutgoing - bestIncoming) * 0.22 +
-          Math.max(0, incomingPlayers.length - outgoingPlayers.length) * 4.0 +
-          Math.max(0, incomingFirstRoundPicksCount - outgoingFirstRoundPicksCount) * 1.5
-        : 0;
+    const multiAssetOutgoingBoost = computeMultiAssetConsolidationBoost({
+      bestAcquiredValue: bestOutgoing,
+      bestCounterpartyValue: bestIncoming,
+      acquiredPlayerCount: outgoingPlayers.length,
+      counterpartyPlayerCount: incomingPlayers.length,
+      acquiredFirstRoundPicksCount: outgoingFirstRoundPicksCount,
+      counterpartyFirstRoundPicksCount: incomingFirstRoundPicksCount,
+    });
 
     const consolidationPremium =
       Math.round((baseIncomingCornerstoneBonus + multiAssetIncomingBoost) * 10) / 10;
@@ -733,9 +787,6 @@ export function evaluateDynastyTrade(params: {
       slotLabel: slot.slotLabel,
     }));
 
-    const MAX_REPLACEMENT_CUT_DV = 24.0;
-    const WAIVER_REPLACEMENT_BASELINE = 14.0;
-    const MIN_PICK_OFFSET_CUT_DV = 3.0;
     const netOutgoingPicks = Math.max(0, outgoingPicks.length - incomingPicks.length);
 
     const cutsSortedForOffset = [...replacementCutAssets].sort(
@@ -1058,17 +1109,18 @@ export function evaluateDynastyTrade(params: {
       (sum, p) => sum + assetCount(p, 'incoming') + assetCount(p, 'outgoing'),
       0
     );
+    const isSettlementTransfer = totalAssets > 0;
     for (const p of participantEvaluations) {
       p.letterGrade = 'N/A';
       p.isWinner = false;
     }
     return {
       participants: participantEvaluations,
-      fairnessScore,
+      fairnessScore: isSettlementTransfer ? 0 : 100,
       fairnessLabel: 'Settlement Transfer',
       winnerRosterId: null,
       winnerRosterName: null,
-      isSettlementTransfer: totalAssets > 0,
+      isSettlementTransfer,
       netAdjustedSpread,
       summaryHeadline:
         evaluationMode === 'HISTORICAL'

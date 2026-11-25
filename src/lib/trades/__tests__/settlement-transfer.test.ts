@@ -27,6 +27,7 @@ describe('Settlement Transfer — atomic N/A resolution (MbaLeagueEngine.evaluat
       snapshot
     );
     expect(result.isSettlementTransfer).toBe(true);
+    expect(result.fairnessScore).toBe(0);
     expect(result.fairnessLabel).toBe('Settlement Transfer');
     expect(result.winnerRosterId).toBeNull();
     expect(result.winnerRosterName).toBeNull();
@@ -36,6 +37,26 @@ describe('Settlement Transfer — atomic N/A resolution (MbaLeagueEngine.evaluat
       expect(p.isWinner).toBe(false);
     }
     expect(result.participants.find((p) => p.rosterId === 2)!.incomingPlayers.length).toBe(1);
+  });
+
+  it('returns fairnessScore 0 even for a low-DV unilateral transfer that would otherwise compute a non-zero pre-override fairness score', async () => {
+    const { engine } = makeEngine();
+    const snapshot = await engine.getLeagueSnapshot();
+    const result = engine.evaluateTrade(
+      {
+        participants: [
+          { rosterId: 1, outgoingPickIds: ['2026-r2-orig-1'], incomingPickIds: [] },
+          { rosterId: 2, outgoingPickIds: [], incomingPickIds: ['2026-r2-orig-1'] },
+        ],
+        pickTierOverrides: { '2026-r2-orig-1': 'Mid' },
+        evaluationMode: 'HISTORICAL',
+      },
+      snapshot
+    );
+    expect(result.isSettlementTransfer).toBe(true);
+    expect(result.fairnessScore).toBe(0);
+    expect(result.fairnessLabel).toBe('Settlement Transfer');
+    expect(result.participants.every((p) => p.letterGrade === 'N/A')).toBe(true);
   });
 
   it('uses the incomplete-proposal headline in LIVE mode', async () => {
@@ -51,6 +72,7 @@ describe('Settlement Transfer — atomic N/A resolution (MbaLeagueEngine.evaluat
       snapshot
     );
     expect(result.isSettlementTransfer).toBe(true);
+    expect(result.fairnessScore).toBe(0);
     expect(result.summaryHeadline).toBe(
       'Incomplete Trade Proposal — Add Incoming & Outgoing Assets for Every Roster'
     );
@@ -71,6 +93,7 @@ describe('Settlement Transfer — atomic N/A resolution (MbaLeagueEngine.evaluat
     );
     expect(result.participants.every((p) => p.letterGrade === 'N/A')).toBe(true);
     expect(result.winnerRosterId).toBeNull();
+    expect(result.fairnessScore).toBe(0);
     expect(result.fairnessLabel).toBe('Settlement Transfer');
     expect(result.isSettlementTransfer).toBe(true);
   });
@@ -92,7 +115,7 @@ describe('Settlement Transfer — atomic N/A resolution (MbaLeagueEngine.evaluat
     expect(result.participants.every((p) => p.letterGrade !== 'N/A')).toBe(true);
   });
 
-  it('marks an empty proposal as N/A but not a Settlement Transfer', async () => {
+  it('marks an empty proposal as N/A with fairnessScore 100 and not a Settlement Transfer', async () => {
     const { engine } = makeEngine();
     const snapshot = await engine.getLeagueSnapshot();
     const result = engine.evaluateTrade(
@@ -105,6 +128,7 @@ describe('Settlement Transfer — atomic N/A resolution (MbaLeagueEngine.evaluat
       snapshot
     );
     expect(result.isSettlementTransfer).toBe(false);
+    expect(result.fairnessScore).toBe(100);
     expect(result.fairnessLabel).toBe('Settlement Transfer');
     expect(result.participants.every((p) => p.letterGrade === 'N/A')).toBe(true);
   });
@@ -153,6 +177,7 @@ describe('Settlement Transfer — Hide Settlements filter (MbaLeagueEngine.grade
       expect.arrayContaining(['tx_settle_a', 'tx_settle_b'])
     );
     for (const s of settlements) {
+      expect(s.fairnessScore).toBe(0);
       expect(s.fairnessLabel).toBe('Settlement Transfer');
       expect(s.winnerRosterId).toBeNull();
       expect(s.participants.every((p) => p.letterGrade === 'N/A')).toBe(true);

@@ -132,8 +132,8 @@ describe('Trade Center Axis 2 Fairness UI Synchronization (#18) — MbaLeaguePro
     );
 
     expect(html).toContain('Lopsided Trade (57/100)');
-    expect(html).toContain('bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30');
+    expect(html).toContain('bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40');
     expect(html).toContain('Fleecing Alert (36/100)');
-    expect(html).toContain('bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30');
+    expect(html).toContain('bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40');
   });
 });

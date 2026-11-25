@@ -21,7 +21,11 @@ import {
 } from 'lucide-react';
 import { useMbaLeague } from '@/components/providers/mba-league-provider';
 import { DynastyValueEstBadge } from '@/components/trades/dynasty-value-est-badge';
-import { describeReplacementCutAdjustment } from '@/lib/trades/trade-analyzer';
+import {
+  ReplacementCutAdjustmentNote,
+  TRADE_FAIRNESS_BADGE_STYLES,
+  TradeGradeBadge,
+} from '@/components/trades/trade-display-helpers';
 import {
   EvaluatedTradePickAsset,
   EvaluatedTradePlayerAsset,
@@ -29,41 +33,21 @@ import {
   HistoricalTradeSeasonFilter,
   MBA_LEAGUE_ID_2025,
   MBA_LEAGUE_ID_2026,
-  TradeLetterGrade,
   TradeParticipantEvaluation,
   TradeProposal,
 } from '@/lib/types/mba';
-
-function GradeBadge({ grade }: { grade: TradeLetterGrade }) {
-  const isNA = grade === 'N/A';
-  const isA = grade.startsWith('A');
-  const isB = grade.startsWith('B');
-  const isC = grade.startsWith('C');
-
-  const style = isNA
-    ? 'border-slate-600/60 bg-slate-800/70 text-slate-300 shadow-slate-950/50 text-base'
-    : isA
-      ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 shadow-emerald-950/50 text-xl'
-      : isB
-        ? 'border-sky-500/50 bg-sky-500/20 text-sky-300 shadow-sky-950/50 text-xl'
-        : isC
-          ? 'border-amber-500/50 bg-amber-500/20 text-amber-300 shadow-amber-950/50 text-xl'
-          : 'border-rose-500/50 bg-rose-500/20 text-rose-300 shadow-rose-950/50 text-xl';
-
-  return (
-    <div
-      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 font-mono font-black shadow-md ${style}`}
-    >
-      {grade}
-    </div>
-  );
-}
 
 export interface HistoricalTradeFilterState {
   seasonFilter: HistoricalTradeSeasonFilter;
   rosterIdFilter: number | null;
   includeSettlements: boolean;
 }
+
+const DEFAULT_FILTER_STATE: HistoricalTradeFilterState = {
+  seasonFilter: 'ALL',
+  rosterIdFilter: null,
+  includeSettlements: true,
+};
 
 /**
  * Ensures active Completed Trade Grader filters reveal the target trade of a Flipped Asset jump,
@@ -96,9 +80,8 @@ export function CompletedTradeGrader({
 }) {
   const { engine, snapshot, activeRosterId } = useMbaLeague();
 
-  const [seasonFilter, setSeasonFilter] = useState<HistoricalTradeSeasonFilter>('ALL');
-  const [rosterIdFilter, setRosterIdFilter] = useState<number | null>(null);
-  const [includeSettlements, setIncludeSettlements] = useState<boolean>(true);
+  const [filters, setFilters] = useState<HistoricalTradeFilterState>(DEFAULT_FILTER_STATE);
+  const { seasonFilter, rosterIdFilter, includeSettlements } = filters;
   const [expandedTradeIds, setExpandedTradeIds] = useState<Record<string, boolean>>(() => {
     const firstId = snapshot.historicalTrades?.[0]?.transactionId;
     return firstId ? { [firstId]: true } : {};
@@ -156,20 +139,7 @@ export function CompletedTradeGrader({
     );
     if (!targetTrade) return;
 
-    const nextFilters = resolveFlippedTradeJumpFilters(targetTrade, {
-      seasonFilter,
-      rosterIdFilter,
-      includeSettlements,
-    });
-    if (nextFilters.seasonFilter !== seasonFilter) {
-      setSeasonFilter(nextFilters.seasonFilter);
-    }
-    if (nextFilters.rosterIdFilter !== rosterIdFilter) {
-      setRosterIdFilter(nextFilters.rosterIdFilter);
-    }
-    if (nextFilters.includeSettlements !== includeSettlements) {
-      setIncludeSettlements(nextFilters.includeSettlements);
-    }
+    setFilters((prev) => resolveFlippedTradeJumpFilters(targetTrade, prev));
 
     setExpandedTradeIds((prev) => ({
       ...prev,
@@ -272,7 +242,7 @@ export function CompletedTradeGrader({
             <button
               type="button"
               data-testid="season-filter-ALL"
-              onClick={() => setSeasonFilter('ALL')}
+              onClick={() => setFilters((prev) => ({ ...prev, seasonFilter: 'ALL' }))}
               className={`cursor-pointer rounded-lg px-3 py-1.5 font-bold transition ${
                 seasonFilter === 'ALL'
                   ? 'bg-orange-500 text-slate-950 shadow'
@@ -284,7 +254,7 @@ export function CompletedTradeGrader({
             <button
               type="button"
               data-testid="season-filter-2026"
-              onClick={() => setSeasonFilter('2026')}
+              onClick={() => setFilters((prev) => ({ ...prev, seasonFilter: '2026' }))}
               className={`cursor-pointer rounded-lg px-3 py-1.5 font-bold transition ${
                 seasonFilter === '2026'
                   ? 'bg-orange-500 text-slate-950 shadow'
@@ -296,7 +266,7 @@ export function CompletedTradeGrader({
             <button
               type="button"
               data-testid="season-filter-2025"
-              onClick={() => setSeasonFilter('2025')}
+              onClick={() => setFilters((prev) => ({ ...prev, seasonFilter: '2025' }))}
               className={`cursor-pointer rounded-lg px-3 py-1.5 font-bold transition ${
                 seasonFilter === '2025'
                   ? 'bg-orange-500 text-slate-950 shadow'
@@ -326,7 +296,10 @@ export function CompletedTradeGrader({
             value={rosterIdFilter ?? ''}
             onChange={(e) => {
               const val = e.target.value;
-              setRosterIdFilter(val ? Number.parseInt(val, 10) : null);
+              setFilters((prev) => ({
+                ...prev,
+                rosterIdFilter: val ? Number.parseInt(val, 10) : null,
+              }));
             }}
             className="cursor-pointer rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white outline-none focus:border-orange-500"
           >
@@ -342,7 +315,10 @@ export function CompletedTradeGrader({
             type="button"
             data-testid="filter-my-roster-trades-btn"
             onClick={() =>
-              setRosterIdFilter((prev) => (prev === activeRosterId ? null : activeRosterId))
+              setFilters((prev) => ({
+                ...prev,
+                rosterIdFilter: prev.rosterIdFilter === activeRosterId ? null : activeRosterId,
+              }))
             }
             className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${
               rosterIdFilter === activeRosterId
@@ -362,7 +338,9 @@ export function CompletedTradeGrader({
             type="button"
             data-testid="toggle-settlements-filter"
             aria-pressed={!includeSettlements}
-            onClick={() => setIncludeSettlements((prev) => !prev)}
+            onClick={() =>
+              setFilters((prev) => ({ ...prev, includeSettlements: !prev.includeSettlements }))
+            }
             className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${
               !includeSettlements
                 ? 'border-amber-500/60 bg-amber-500/20 text-amber-200'
@@ -390,11 +368,7 @@ export function CompletedTradeGrader({
           </p>
           <button
             type="button"
-            onClick={() => {
-              setSeasonFilter('ALL');
-              setRosterIdFilter(null);
-              setIncludeSettlements(true);
-            }}
+            onClick={() => setFilters(DEFAULT_FILTER_STATE)}
             className="mt-4 cursor-pointer rounded-xl bg-orange-500 px-4 py-2 text-xs font-extrabold text-slate-950 hover:bg-orange-400"
           >
             Reset Trade History Filters
@@ -455,17 +429,7 @@ export function CompletedTradeGrader({
 
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-xs font-bold ${
-                        trade.fairnessLabel === 'Settlement Transfer'
-                          ? 'bg-slate-800 text-slate-300 ring-1 ring-slate-600/50'
-                          : trade.fairnessLabel === 'Balanced Trade'
-                            ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30'
-                            : trade.fairnessLabel === 'Slight Edge'
-                              ? 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30'
-                              : trade.fairnessLabel === 'Lopsided Trade'
-                                ? 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30'
-                                : 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30'
-                      }`}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-xs font-bold ${TRADE_FAIRNESS_BADGE_STYLES[trade.fairnessLabel]}`}
                     >
                       <Scale className="h-3.5 w-3.5" />
                       <span>
@@ -537,7 +501,7 @@ export function CompletedTradeGrader({
                             </p>
                           </div>
 
-                          <GradeBadge grade={part.letterGrade} />
+                          <TradeGradeBadge grade={part.letterGrade} size="md" />
                         </div>
 
                         {/* Quick Dual-Axis Delta Strip */}
@@ -782,32 +746,21 @@ export function CompletedTradeGrader({
                             </div>
                           </div>
 
-                          {part.replacementCutAssets.length > 0 && (() => {
-                            const cutAdjustment = describeReplacementCutAdjustment({
-                              replacementCutAssets: part.replacementCutAssets,
-                              replacementCutPenalty: part.replacementCutPenalty,
-                              outgoingPicksCount: part.outgoingPicks.length,
-                              incomingPicksCount: part.incomingPicks.length,
-                            });
-                            return (
-                              <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2 text-[11px] text-rose-200">
-                                <Scissors className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
-                                <div>
-                                  <span className="font-bold">Replacement Cut Asset(s): </span>
-                                  {part.replacementCutAssets
-                                    .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)} DV)`)
-                                    .join(', ')}
-                                  {cutAdjustment.isReduced && (
-                                    <div className="mt-0.5 text-amber-200/90">
-                                      Gross {cutAdjustment.rawCutSum.toFixed(1)} DV reduced to -
-                                      {part.replacementCutPenalty.toFixed(1)} via{' '}
-                                      {cutAdjustment.reasons.join(' & ')}.
-                                    </div>
-                                  )}
-                                </div>
+                          {part.replacementCutAssets.length > 0 && (
+                            <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2 text-[11px] text-rose-200">
+                              <Scissors className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
+                              <div>
+                                <span className="font-bold">Replacement Cut Asset(s): </span>
+                                {part.replacementCutAssets
+                                  .map((c) => `${c.fullName} (${c.dynastyValue.toFixed(1)} DV)`)
+                                  .join(', ')}
+                                <ReplacementCutAdjustmentNote
+                                  participant={part}
+                                  className="mt-0.5 text-amber-200/90"
+                                />
                               </div>
-                            );
-                          })()}
+                            </div>
+                          )}
 
                           <ul className="space-y-1 text-[11px] text-slate-300">
                             {part.takeaways.map((bullet, bIdx) => (
